@@ -1,0 +1,38 @@
+{
+  "name": "trvzb-scheduler-card",
+  "version": "0.1.0",
+  "description": "Home Assistant custom card for managing Sonoff TRVZB thermostat schedules",
+  "main": "dist/trvzb-scheduler-card.js",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "home-assistant",
+    "custom-card",
+    "sonoff",
+    "trvzb",
+    "thermostat",
+    "heating",
+    "schedule"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "lit": "^3.1.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@testing-library/dom": "^9.3.4",
+    "@types/node": "^20.11.5",
+    "jsdom": "^23.2.0",
+    "rollup": "^4.9.6",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  }
+}
