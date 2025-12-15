@@ -1,0 +1,6 @@
+{
+  "name": "TRVZB Scheduler Card",
+  "render_readme": true,
+  "filename": "trvzb-scheduler-card.js",
+  "homeassistant": "2024.1.0"
+}
