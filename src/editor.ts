@@ -25,8 +25,8 @@ export class TRVZBSchedulerCardEditor extends LitElement {
    */
   public setConfig(config: TRVZBSchedulerCardConfig): void {
     this._config = {
-      type: 'trvzb-scheduler-card',
       ...config,
+      type: 'trvzb-scheduler-card',
     };
   }
 
@@ -121,9 +121,10 @@ export class TRVZBSchedulerCardEditor extends LitElement {
       .filter((entityId) => entityId.startsWith('climate.'))
       .map((entityId) => {
         const state = this.hass.states[entityId];
+        const friendlyName = state.attributes.friendly_name;
         return {
           id: entityId,
-          name: state.attributes.friendly_name || entityId,
+          name: (typeof friendlyName === 'string' ? friendlyName : entityId) as string,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));

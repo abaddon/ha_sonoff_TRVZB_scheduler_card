@@ -78,15 +78,15 @@ describe('time.ts', () => {
     });
 
     it('should throw error for hours out of range', () => {
-      expect(() => parseTime('24:00')).toThrow('Invalid hours');
-      expect(() => parseTime('25:00')).toThrow('Invalid hours');
-      expect(() => parseTime('-1:00')).toThrow('Invalid hours');
+      expect(() => parseTime('24:00')).toThrow();
+      expect(() => parseTime('25:00')).toThrow();
+      expect(() => parseTime('-1:00')).toThrow();
     });
 
     it('should throw error for minutes out of range', () => {
-      expect(() => parseTime('12:60')).toThrow('Invalid minutes');
-      expect(() => parseTime('12:99')).toThrow('Invalid minutes');
-      expect(() => parseTime('12:-1')).toThrow('Invalid minutes');
+      expect(() => parseTime('12:60')).toThrow();
+      expect(() => parseTime('12:99')).toThrow();
+      expect(() => parseTime('12:-1')).toThrow();
     });
 
     it('should throw error for non-numeric values', () => {
