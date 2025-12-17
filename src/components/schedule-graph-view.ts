@@ -258,10 +258,44 @@ export class ScheduleGraphView extends LitElement {
 
   // Chart dimensions and layout constants
   private readonly CHART_PADDING = { top: 20, right: 20, bottom: 40, left: 50 };
-  private readonly TEMP_MIN = 4;
-  private readonly TEMP_MAX = 30;
+  private readonly TEMP_PADDING = 5; // Padding above/below min/max temps
+  private readonly TEMP_ABSOLUTE_MIN = 4; // Absolute minimum allowed
+  private readonly TEMP_ABSOLUTE_MAX = 35; // Absolute maximum allowed
   private readonly HOUR_MIN = 0;
   private readonly HOUR_MAX = 24;
+
+  /**
+   * Get dynamic temperature range based on current day's schedule
+   * Returns { min, max } with padding applied
+   */
+  private getTempRange(): { min: number; max: number } {
+    const daySchedule = this.getCurrentDaySchedule();
+
+    if (!daySchedule || daySchedule.transitions.length === 0) {
+      // Default range if no schedule
+      return { min: 15, max: 25 };
+    }
+
+    const temps = daySchedule.transitions.map(t => t.temperature);
+    const minTemp = Math.min(...temps);
+    const maxTemp = Math.max(...temps);
+
+    // Apply padding and clamp to absolute limits
+    const rangeMin = Math.max(this.TEMP_ABSOLUTE_MIN, Math.floor(minTemp - this.TEMP_PADDING));
+    const rangeMax = Math.min(this.TEMP_ABSOLUTE_MAX, Math.ceil(maxTemp + this.TEMP_PADDING));
+
+    // Ensure minimum range of 10 degrees for readability
+    const range = rangeMax - rangeMin;
+    if (range < 10) {
+      const midpoint = (rangeMin + rangeMax) / 2;
+      return {
+        min: Math.max(this.TEMP_ABSOLUTE_MIN, Math.floor(midpoint - 5)),
+        max: Math.min(this.TEMP_ABSOLUTE_MAX, Math.ceil(midpoint + 5))
+      };
+    }
+
+    return { min: rangeMin, max: rangeMax };
+  }
 
   /**
    * Select a different day
@@ -288,12 +322,13 @@ export class ScheduleGraphView extends LitElement {
   }
 
   /**
-   * Convert temperature (4-35) to SVG Y coordinate
+   * Convert temperature to SVG Y coordinate using dynamic range
    */
   private tempToY(temp: number, height: number): number {
+    const { min, max } = this.getTempRange();
     const chartHeight = height - this.CHART_PADDING.top - this.CHART_PADDING.bottom;
-    const tempRange = this.TEMP_MAX - this.TEMP_MIN;
-    const normalized = (temp - this.TEMP_MIN) / tempRange;
+    const tempRange = max - min;
+    const normalized = (temp - min) / tempRange;
     return this.CHART_PADDING.top + chartHeight * (1 - normalized);
   }
 
@@ -307,17 +342,18 @@ export class ScheduleGraphView extends LitElement {
   }
 
   /**
-   * Convert SVG Y coordinate to temperature
+   * Convert SVG Y coordinate to temperature using dynamic range
    */
   private yToTemp(y: number, height: number): number {
+    const { min, max } = this.getTempRange();
     const chartHeight = height - this.CHART_PADDING.top - this.CHART_PADDING.bottom;
     const relY = y - this.CHART_PADDING.top;
     const normalized = 1 - relY / chartHeight;
-    const temp = this.TEMP_MIN + normalized * (this.TEMP_MAX - this.TEMP_MIN);
+    const temp = min + normalized * (max - min);
 
-    // Round to nearest 0.5°C and clamp to range
+    // Round to nearest 0.5°C and clamp to absolute limits (allow dragging beyond visible range)
     const rounded = Math.round(temp * 2) / 2;
-    return Math.max(this.TEMP_MIN, Math.min(this.TEMP_MAX, rounded));
+    return Math.max(this.TEMP_ABSOLUTE_MIN, Math.min(this.TEMP_ABSOLUTE_MAX, rounded));
   }
 
   /**
@@ -550,9 +586,14 @@ export class ScheduleGraphView extends LitElement {
   private renderGridLines(width: number, height: number) {
     console.log('[schedule-graph-view] renderGridLines called', { width, height, padding: this.CHART_PADDING });
     const lines = [];
+    const { min: tempMin, max: tempMax } = this.getTempRange();
 
-    // Horizontal grid lines (temperature)
-    for (let temp = this.TEMP_MIN; temp <= this.TEMP_MAX; temp += 5) {
+    // Horizontal grid lines (temperature) - use dynamic range
+    // Round to nearest 5 for cleaner grid lines
+    const gridStart = Math.ceil(tempMin / 5) * 5;
+    const gridEnd = Math.floor(tempMax / 5) * 5;
+
+    for (let temp = gridStart; temp <= gridEnd; temp += 5) {
       const y = this.tempToY(temp, height);
       console.log(`[schedule-graph-view] Horizontal grid line at temp ${temp}°C: y=${y}`);
       lines.push(svg`
@@ -631,8 +672,13 @@ export class ScheduleGraphView extends LitElement {
       />
     `);
 
-    // Y-axis labels (temperature)
-    for (let temp = this.TEMP_MIN; temp <= this.TEMP_MAX; temp += 5) {
+    // Y-axis labels (temperature) - use dynamic range
+    const { min: tempMin, max: tempMax } = this.getTempRange();
+    // Round to nearest 5 for cleaner labels
+    const labelStart = Math.ceil(tempMin / 5) * 5;
+    const labelEnd = Math.floor(tempMax / 5) * 5;
+
+    for (let temp = labelStart; temp <= labelEnd; temp += 5) {
       const y = this.tempToY(temp, height);
       elements.push(svg`
         <text
