@@ -93,16 +93,10 @@ export class ScheduleGraphView extends LitElement {
 
       .axis-label {
         fill: var(--secondary-text-color, #666666);
-        font-size: 11px;
+        font-size: 9px;
         font-family: var(--paper-font-body1_-_font-family, Arial, sans-serif);
       }
 
-      .axis-title {
-        fill: var(--primary-text-color, #333333);
-        font-size: 12px;
-        font-weight: 600;
-        font-family: var(--paper-font-body1_-_font-family, Arial, sans-serif);
-      }
 
       .temperature-line {
         fill: none;
@@ -254,7 +248,7 @@ export class ScheduleGraphView extends LitElement {
   // Chart dimensions and layout constants
   private readonly CHART_PADDING = { top: 20, right: 20, bottom: 40, left: 50 };
   private readonly TEMP_MIN = 4;
-  private readonly TEMP_MAX = 35;
+  private readonly TEMP_MAX = 30;
   private readonly HOUR_MIN = 0;
   private readonly HOUR_MAX = 24;
 
@@ -561,8 +555,8 @@ export class ScheduleGraphView extends LitElement {
       `);
     }
 
-    // Vertical grid lines (hours)
-    for (let hour = 0; hour <= 24; hour += 3) {
+    // Vertical grid lines (every hour)
+    for (let hour = 0; hour <= 24; hour += 1) {
       const x = this.hourToX(hour, width);
       console.log(`[schedule-graph-view] Vertical grid line at hour ${hour}: x=${x}`);
       lines.push(svg`
@@ -600,32 +594,20 @@ export class ScheduleGraphView extends LitElement {
       />
     `);
 
-    // X-axis labels (hours)
-    for (let hour = 0; hour <= 24; hour += 3) {
+    // X-axis labels (every hour)
+    for (let hour = 0; hour <= 24; hour += 1) {
       const x = this.hourToX(hour, width);
       elements.push(svg`
         <text
           class="axis-label"
           x="${x}"
-          y="${height - this.CHART_PADDING.bottom + 20}"
+          y="${height - this.CHART_PADDING.bottom + 15}"
           text-anchor="middle"
         >
-          ${hour}:00
+          ${hour}
         </text>
       `);
     }
-
-    // X-axis title
-    elements.push(svg`
-      <text
-        class="axis-title"
-        x="${width / 2}"
-        y="${height - 5}"
-        text-anchor="middle"
-      >
-        Time of Day
-      </text>
-    `);
 
     // Y-axis (temperature)
     elements.push(svg`
@@ -652,19 +634,6 @@ export class ScheduleGraphView extends LitElement {
         </text>
       `);
     }
-
-    // Y-axis title
-    elements.push(svg`
-      <text
-        class="axis-title"
-        x="${-height / 2}"
-        y="15"
-        text-anchor="middle"
-        transform="rotate(-90, 0, 0)"
-      >
-        Temperature
-      </text>
-    `);
 
     return elements;
   }
