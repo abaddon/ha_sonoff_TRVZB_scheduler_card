@@ -26,7 +26,7 @@ export class TRVZBSchedulerCardEditor extends LitElement {
   public setConfig(config: TRVZBSchedulerCardConfig): void {
     this._config = {
       ...config,
-      type: 'trvzb-scheduler-card',
+      type: 'custom:trvzb-scheduler-card',
     };
   }
 
@@ -306,9 +306,9 @@ declare global {
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'trvzb-scheduler-card',
+  type: 'custom:trvzb-scheduler-card',
   name: 'TRVZB Scheduler Card',
   description: 'Manage weekly heating schedules for Sonoff TRVZB thermostats',
   preview: false,
-  documentationURL: 'https://github.com/your-repo/trvzb-scheduler-card',
+  documentationURL: 'https://github.com/abaddon/ha_sonos_TRVZB_scheduler_card',
 });

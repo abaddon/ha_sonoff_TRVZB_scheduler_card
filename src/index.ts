@@ -16,12 +16,7 @@ import './components/day-schedule-editor';
 import './components/transition-editor';
 import './components/copy-schedule-dialog';
 
-// Log card version
-console.info(
-  '%c TRVZB-SCHEDULER-CARD %c v1.0.0 ',
-  'color: white; background: #3498db; font-weight: bold;',
-  'color: #3498db; background: white; font-weight: bold;'
-);
+
 
 // Export main card class for potential external use
 export { TRVZBSchedulerCard, TRVZBSchedulerCardEditor };
