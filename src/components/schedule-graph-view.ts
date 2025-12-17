@@ -111,21 +111,25 @@ export class ScheduleGraphView extends LitElement {
         stroke-linejoin: round;
       }
 
-      .temperature-point {
+      .point-group {
         cursor: grab;
-        transition: r 0.2s ease, stroke-width 0.2s ease;
+        pointer-events: auto;
       }
 
-      .temperature-point:hover {
+      .point-group:active {
+        cursor: grabbing;
+      }
+
+      .temperature-point {
+        transition: r 0.2s ease, stroke-width 0.2s ease;
+        pointer-events: auto;
+      }
+
+      .point-group:hover .temperature-point {
         stroke-width: 3;
       }
 
-      .temperature-point:active {
-        cursor: grabbing;
-      }
-
       .temperature-point.dragging {
-        cursor: grabbing;
         stroke-width: 4;
       }
 
@@ -326,12 +330,17 @@ export class ScheduleGraphView extends LitElement {
    * Handle mouse down on temperature point (start drag)
    */
   private handlePointMouseDown(index: number, event: MouseEvent): void {
-    if (this.disabled || index === 0) return; // Can't drag midnight transition
+    console.log('[schedule-graph-view] handlePointMouseDown called', { index, disabled: this.disabled });
+    if (this.disabled) return;
 
     event.preventDefault();
+    event.stopPropagation();
     this.draggingPoint = index;
     this.dragStartX = event.clientX;
     this.dragStartY = event.clientY;
+
+    // Change cursor to grabbing
+    document.body.style.cursor = 'grabbing';
 
     // Add global mouse event listeners
     document.addEventListener('mousemove', this.handleMouseMove);
@@ -362,9 +371,10 @@ export class ScheduleGraphView extends LitElement {
     const transitions = [...daySchedule.transitions];
     const transition = transitions[this.draggingPoint];
 
-    // Round hours to 15-minute intervals
-    const roundedHours = Math.round(hours * 4) / 4;
-    const newTime = this.hoursToTime(roundedHours);
+    // For the first point (index 0), keep time fixed at 00:00
+    // For other points, round hours to 15-minute intervals
+    const isFirstPoint = this.draggingPoint === 0;
+    const newTime = isFirstPoint ? '00:00' : this.hoursToTime(Math.round(hours * 4) / 4);
 
     // Update transition (temperature already rounded in yToTemp)
     transitions[this.draggingPoint] = {
@@ -380,6 +390,7 @@ export class ScheduleGraphView extends LitElement {
    * Handle mouse up (end drag and save)
    */
   private handleMouseUp = (): void => {
+    console.log('[schedule-graph-view] handleMouseUp called', { draggingPoint: this.draggingPoint });
     if (this.draggingPoint !== null) {
       // Save the changes
       const daySchedule = this.getCurrentDaySchedule();
@@ -389,6 +400,7 @@ export class ScheduleGraphView extends LitElement {
     }
 
     this.draggingPoint = null;
+    document.body.style.cursor = ''; // Restore cursor
     document.removeEventListener('mousemove', this.handleMouseMove);
     document.removeEventListener('mouseup', this.handleMouseUp);
   };
@@ -676,12 +688,16 @@ export class ScheduleGraphView extends LitElement {
       const y = this.tempToY(transition.temperature, height);
       const color = getTemperatureColor(transition.temperature);
       const isDragging = this.draggingPoint === index;
-      const isFixed = index === 0; // Midnight transition is fixed
+      const isTimeFixed = index === 0; // Midnight transition has fixed time but adjustable temp
 
       console.log(`[schedule-graph-view] Point ${index}: time=${transition.time} (${hours}h), temp=${transition.temperature}°C, color=${color}, x=${x}, y=${y}`);
 
       return svg`
-        <g>
+        <g
+          class="point-group"
+          data-point-index="${index}"
+          style="cursor: ${isTimeFixed ? 'ns-resize' : 'grab'};"
+        >
           <circle
             class="temperature-point ${isDragging ? 'dragging' : ''}"
             cx="${x}"
@@ -690,8 +706,6 @@ export class ScheduleGraphView extends LitElement {
             fill="${color}"
             stroke="white"
             stroke-width="${isDragging ? 4 : 2}"
-            style="${isFixed ? 'cursor: not-allowed; opacity: 0.7;' : ''}"
-            @mousedown="${isFixed ? null : (e: MouseEvent) => this.handlePointMouseDown(index, e)}"
           />
           <text
             class="point-label"
@@ -706,9 +720,9 @@ export class ScheduleGraphView extends LitElement {
             x="${x}"
             y="${y + 20}"
             text-anchor="middle"
-            fill="${isFixed ? 'var(--info-color, #2196F3)' : 'var(--secondary-text-color, #666666)'}"
+            fill="${isTimeFixed ? 'var(--info-color, #2196F3)' : 'var(--secondary-text-color, #666666)'}"
           >
-            ${transition.time}${isFixed ? ' (fixed)' : ''}
+            ${transition.time}${isTimeFixed ? ' (time fixed)' : ''}
           </text>
         </g>
       `;
@@ -809,6 +823,52 @@ export class ScheduleGraphView extends LitElement {
         ${this.renderAddButton()}
       </div>
     `;
+  }
+
+  // Bound handler to prevent duplicate listeners
+  private boundSvgMouseDown: ((e: Event) => void) | null = null;
+
+  /**
+   * Attach event listener to SVG for event delegation
+   * This is needed because svg template literal doesn't support @event bindings
+   */
+  protected updated(): void {
+    // Use event delegation on the chart SVG
+    const svg = this.renderRoot.querySelector('.chart-svg');
+    if (svg) {
+      // Create bound handler if not exists
+      if (!this.boundSvgMouseDown) {
+        this.boundSvgMouseDown = this.handleSvgMouseDown.bind(this);
+      }
+
+      // Check if listener already attached using a data attribute
+      if (!svg.hasAttribute('data-listener-attached')) {
+        console.log('[schedule-graph-view] updated() - attaching event delegation to SVG');
+        svg.addEventListener('mousedown', this.boundSvgMouseDown);
+        svg.setAttribute('data-listener-attached', 'true');
+      }
+    }
+  }
+
+  /**
+   * Handle mousedown on SVG using event delegation
+   */
+  private handleSvgMouseDown(e: Event): void {
+    const mouseEvent = e as MouseEvent;
+    const target = mouseEvent.target as Element;
+
+    console.log('[schedule-graph-view] SVG mousedown, target:', target.tagName, target.className);
+
+    // Find the closest point-group ancestor
+    const pointGroup = target.closest('.point-group');
+    if (pointGroup) {
+      const indexAttr = pointGroup.getAttribute('data-point-index');
+      console.log('[schedule-graph-view] Found point group with index:', indexAttr);
+      if (indexAttr !== null) {
+        const index = parseInt(indexAttr, 10);
+        this.handlePointMouseDown(index, mouseEvent);
+      }
+    }
   }
 
   disconnectedCallback() {
