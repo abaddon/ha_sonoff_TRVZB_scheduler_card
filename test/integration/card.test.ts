@@ -149,7 +149,7 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
     it('should show error and use default schedule when sensor has no schedule attribute', async () => {
       // Create climate entity and sensor without schedule attribute
       const entityWithoutSchedule = createMockClimateEntityWithoutSchedule();
-      const sensorEntityId = `sensor.${entityWithoutSchedule.entity_id.split('.')[1]}_weekly_scheduler`;
+      const sensorEntityId = `sensor.${entityWithoutSchedule.entity_id.split('.')[1]}_weekly_schedule`;
       const sensorWithoutSchedule = {
         entity_id: sensorEntityId,
         state: 'active',
@@ -1016,7 +1016,7 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
       const newHass = createMockHass({
         states: {
           'climate.new_entity': newEntity,
-          'sensor.new_entity_weekly_scheduler': newSensor
+          'sensor.new_entity_weekly_schedule': newSensor
         }
       });
 

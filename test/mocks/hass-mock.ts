@@ -255,7 +255,7 @@ export function createMockTRVZBEntity(
  * Create a mock weekly_scheduler sensor entity
  * This sensor contains the schedule attribute that the card reads from
  *
- * @param friendlyName - The base name for the entity (will create sensor.{name}_weekly_scheduler)
+ * @param friendlyName - The base name for the entity (will create sensor.{name}_weekly_schedule)
  * @param schedule - Optional weekly schedule (uses sample schedule if not provided)
  * @returns Mock HassEntity for the sensor
  */
@@ -263,7 +263,7 @@ export function createMockScheduleSensor(
   friendlyName: string = "living_room_trvzb",
   schedule?: MQTTWeeklySchedule
 ): HassEntity {
-  const sensorEntityId = `sensor.${friendlyName}_weekly_scheduler`;
+  const sensorEntityId = `sensor.${friendlyName}_weekly_schedule`;
   const scheduleAttribute = schedule || SAMPLE_WEEKLY_SCHEDULE;
 
   return {

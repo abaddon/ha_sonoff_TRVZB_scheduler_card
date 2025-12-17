@@ -18,14 +18,15 @@ export interface EntityInfo {
 
 /**
  * Derive the schedule sensor entity ID from a climate entity ID
- * Convention: climate.device_name -> sensor.device_name_weekly_scheduler
+ * Convention: climate.device_name -> sensor.device_name_weekly_schedule
  *
  * @param climateEntityId - Climate entity ID (e.g., "climate.living_room_trvzb")
- * @returns Sensor entity ID (e.g., "sensor.living_room_trvzb_weekly_scheduler")
+ * @returns Sensor entity ID (e.g., "sensor.living_room_trvzb_weekly_schedule")
  */
 export function deriveSensorEntityId(climateEntityId: string): string {
   const deviceName = extractFriendlyName(climateEntityId);
-  return `sensor.${deviceName}_weekly_scheduler`;
+
+  return `sensor.${deviceName}_weekly_schedule`;
 }
 
 /**
@@ -45,7 +46,7 @@ export function getSensorEntityId(climateEntityId: string, configuredSensor?: st
  * Reads from the 'schedule' attribute of the weekly_scheduler sensor
  *
  * @param hass - Home Assistant instance
- * @param sensorEntityId - Sensor entity ID (e.g., "sensor.device_weekly_scheduler")
+ * @param sensorEntityId - Sensor entity ID (e.g., "sensor.device_weekly_schedule")
  * @returns Weekly schedule or null if not found
  */
 export function getScheduleFromSensor(hass: HomeAssistant, sensorEntityId: string): WeeklySchedule | null {
