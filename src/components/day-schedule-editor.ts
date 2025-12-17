@@ -73,12 +73,6 @@ export class DayScheduleEditor extends LitElement {
         gap: 12px;
       }
 
-      .add-transition-container {
-        display: flex;
-        justify-content: center;
-        padding-top: 8px;
-      }
-
       .error-list {
         margin: 0;
         padding-left: 20px;
@@ -92,6 +86,7 @@ export class DayScheduleEditor extends LitElement {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
+        padding-top: 8px;
       }
 
       .button-row .button {
@@ -408,8 +403,8 @@ export class DayScheduleEditor extends LitElement {
                 </div>
               </div>
 
-              <!-- Add Transition Button -->
-              <div class="add-transition-container">
+              <!-- Action Buttons -->
+              <div class="button-row">
                 <button
                   class="button button-primary"
                   ?disabled=${!canAddTransition}
@@ -419,10 +414,6 @@ export class DayScheduleEditor extends LitElement {
                   + Add Transition
                   ${!canAddTransition ? html` <span>(Max 6)</span>` : ''}
                 </button>
-              </div>
-
-              <!-- Copy Button -->
-              <div class="button-row">
                 <button
                   class="button button-secondary"
                   @click=${this._requestCopy}
