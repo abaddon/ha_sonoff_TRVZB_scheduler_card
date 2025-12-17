@@ -10,6 +10,9 @@ A Home Assistant custom card for managing weekly heating schedules on **Sonoff T
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=abaddon&repository=ha_sonos_TRVZB_scheduler_card&category=plugin)
 
+> [!WARNING]
+> **Zigbee2MQTT Requirement:** This card requires Zigbee2MQTT with the weekly schedule sensor feature for TRVZB devices. This feature is available after the merge of [PR #30226](https://github.com/Koenkk/zigbee2mqtt/pull/30226). Please ensure your Zigbee2MQTT version includes this change.
+
 ## Features
 
 - **Two View Modes**: Switch between a visual weekly calendar grid and a detailed list view
