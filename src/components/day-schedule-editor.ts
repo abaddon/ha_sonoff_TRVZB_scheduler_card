@@ -412,7 +412,6 @@ export class DayScheduleEditor extends LitElement {
                   title=${canAddTransition ? 'Add new transition' : 'Maximum 6 transitions per day'}
                 >
                   + Add Transition
-                  ${!canAddTransition ? html` <span>(Max 6)</span>` : ''}
                 </button>
                 <button
                   class="button button-secondary"
