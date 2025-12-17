@@ -234,6 +234,12 @@ export class ScheduleGraphView extends LitElement {
   @state()
   private dragStartY: number = 0;
 
+  @state()
+  private isDragging: boolean = false;
+
+  // Minimum distance (in pixels) to move before considering it a drag
+  private readonly DRAG_THRESHOLD = 5;
+
   // Day order for display (Monday-Sunday)
   private readonly dayOrder: DayOfWeek[] = [
     'monday',
@@ -338,6 +344,7 @@ export class ScheduleGraphView extends LitElement {
     this.draggingPoint = index;
     this.dragStartX = event.clientX;
     this.dragStartY = event.clientY;
+    this.isDragging = false; // Will become true once threshold is exceeded
 
     // Change cursor to grabbing
     document.body.style.cursor = 'grabbing';
@@ -352,6 +359,22 @@ export class ScheduleGraphView extends LitElement {
    */
   private handleMouseMove = (event: MouseEvent): void => {
     if (this.draggingPoint === null || this.disabled) return;
+
+    // Check if we've exceeded the drag threshold
+    if (!this.isDragging) {
+      const dx = event.clientX - this.dragStartX;
+      const dy = event.clientY - this.dragStartY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < this.DRAG_THRESHOLD) {
+        // Haven't moved enough to be considered a drag yet
+        return;
+      }
+
+      // Now we're actually dragging
+      this.isDragging = true;
+      console.log('[schedule-graph-view] Drag threshold exceeded, starting drag');
+    }
 
     const svg = this.renderRoot.querySelector('.chart-svg') as SVGSVGElement;
     if (!svg) return;
@@ -390,8 +413,10 @@ export class ScheduleGraphView extends LitElement {
    * Handle mouse up (end drag and save)
    */
   private handleMouseUp = (): void => {
-    console.log('[schedule-graph-view] handleMouseUp called', { draggingPoint: this.draggingPoint });
-    if (this.draggingPoint !== null) {
+    console.log('[schedule-graph-view] handleMouseUp called', { draggingPoint: this.draggingPoint, isDragging: this.isDragging });
+
+    // Only save if an actual drag occurred (threshold was exceeded)
+    if (this.draggingPoint !== null && this.isDragging) {
       // Save the changes
       const daySchedule = this.getCurrentDaySchedule();
       if (daySchedule) {
@@ -400,6 +425,7 @@ export class ScheduleGraphView extends LitElement {
     }
 
     this.draggingPoint = null;
+    this.isDragging = false;
     document.body.style.cursor = ''; // Restore cursor
     document.removeEventListener('mousemove', this.handleMouseMove);
     document.removeEventListener('mouseup', this.handleMouseUp);
@@ -825,8 +851,9 @@ export class ScheduleGraphView extends LitElement {
     `;
   }
 
-  // Bound handler to prevent duplicate listeners
+  // Bound handlers to prevent duplicate listeners
   private boundSvgMouseDown: ((e: Event) => void) | null = null;
+  private boundSvgDblClick: ((e: Event) => void) | null = null;
 
   /**
    * Attach event listener to SVG for event delegation
@@ -836,15 +863,19 @@ export class ScheduleGraphView extends LitElement {
     // Use event delegation on the chart SVG
     const svg = this.renderRoot.querySelector('.chart-svg');
     if (svg) {
-      // Create bound handler if not exists
+      // Create bound handlers if not exists
       if (!this.boundSvgMouseDown) {
         this.boundSvgMouseDown = this.handleSvgMouseDown.bind(this);
+      }
+      if (!this.boundSvgDblClick) {
+        this.boundSvgDblClick = this.handleSvgDblClick.bind(this);
       }
 
       // Check if listener already attached using a data attribute
       if (!svg.hasAttribute('data-listener-attached')) {
         console.log('[schedule-graph-view] updated() - attaching event delegation to SVG');
         svg.addEventListener('mousedown', this.boundSvgMouseDown);
+        svg.addEventListener('dblclick', this.boundSvgDblClick);
         svg.setAttribute('data-listener-attached', 'true');
       }
     }
@@ -869,6 +900,58 @@ export class ScheduleGraphView extends LitElement {
         this.handlePointMouseDown(index, mouseEvent);
       }
     }
+  }
+
+  /**
+   * Handle double-click on SVG using event delegation - removes the point
+   */
+  private handleSvgDblClick(e: Event): void {
+    if (this.disabled) return;
+
+    const mouseEvent = e as MouseEvent;
+    const target = mouseEvent.target as Element;
+
+    console.log('[schedule-graph-view] SVG dblclick, target:', target.tagName, target.className);
+
+    // Find the closest point-group ancestor
+    const pointGroup = target.closest('.point-group');
+    if (pointGroup) {
+      const indexAttr = pointGroup.getAttribute('data-point-index');
+      console.log('[schedule-graph-view] Double-click on point group with index:', indexAttr);
+
+      if (indexAttr !== null) {
+        const index = parseInt(indexAttr, 10);
+        this.removeTransitionAtIndex(index);
+      }
+    }
+  }
+
+  /**
+   * Remove a transition at the given index
+   */
+  private removeTransitionAtIndex(index: number): void {
+    const daySchedule = this.getCurrentDaySchedule();
+    if (!daySchedule) return;
+
+    // Cannot remove the first point (00:00 is required)
+    if (index === 0) {
+      console.log('[schedule-graph-view] Cannot remove first point (00:00 is required)');
+      return;
+    }
+
+    // Must have at least 1 transition
+    if (daySchedule.transitions.length <= 1) {
+      console.log('[schedule-graph-view] Cannot remove last transition');
+      return;
+    }
+
+    console.log('[schedule-graph-view] Removing transition at index:', index);
+
+    // Create new transitions array without the removed point
+    const transitions = daySchedule.transitions.filter((_, i) => i !== index);
+
+    // Dispatch update with save
+    this.dispatchTransitionUpdate(transitions, true);
   }
 
   disconnectedCallback() {
