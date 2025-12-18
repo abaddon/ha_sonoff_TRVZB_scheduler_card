@@ -84,8 +84,14 @@ export class TransitionEditor extends LitElement {
         letter-spacing: 0.5px;
       }
 
-      .time-input {
-        padding: 8px 12px;
+      .time-picker {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .time-select {
+        padding: 8px 4px;
         border: 1px solid var(--divider-color);
         border-radius: 6px;
         font-size: 14px;
@@ -93,23 +99,39 @@ export class TransitionEditor extends LitElement {
         color: var(--primary-text-color);
         font-family: monospace;
         transition: all 0.2s ease;
+        cursor: pointer;
+        min-width: 50px;
+        text-align: center;
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 6px center;
+        padding-right: 20px;
       }
 
-      .time-input:focus {
+      .time-select:focus {
         outline: none;
         border-color: var(--primary-color);
         box-shadow: 0 0 0 2px rgba(3, 169, 244, 0.2);
       }
 
-      .time-input:disabled {
+      .time-select:disabled {
         cursor: not-allowed;
-        background: var(--card-background-color);
+        background-color: var(--card-background-color);
         color: var(--primary-text-color);
         opacity: 0.7;
+        background-image: none;
       }
 
-      .time-input.error {
+      .time-select.error {
         border-color: var(--error-color);
+      }
+
+      .time-separator {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--primary-text-color);
       }
 
       .temperature-control {
@@ -120,6 +142,8 @@ export class TransitionEditor extends LitElement {
 
       .temperature-slider {
         flex: 1;
+        min-width: 100px;
+        width: 100%;
         height: 8px;
         border-radius: 4px;
         background: linear-gradient(
@@ -203,15 +227,63 @@ export class TransitionEditor extends LitElement {
 
       /* Responsive adjustments */
       @media (max-width: 600px) {
+        .transition-editor {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+          padding: 10px;
+        }
+
+        .transition-number {
+          align-self: flex-start;
+        }
+
         .transition-content {
           flex-direction: column;
           align-items: stretch;
+          width: 100%;
         }
 
-        .time-field,
+        .time-field {
+          width: 100%;
+          min-width: auto;
+        }
+
         .temperature-field {
           width: 100%;
           min-width: auto;
+        }
+
+        .temperature-control {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+        }
+
+        .temperature-slider {
+          width: 100%;
+          min-width: unset;
+          height: 12px;
+        }
+
+        .temperature-slider::-webkit-slider-thumb {
+          width: 28px;
+          height: 28px;
+        }
+
+        .temperature-slider::-moz-range-thumb {
+          width: 28px;
+          height: 28px;
+        }
+
+        .temperature-display {
+          align-self: center;
+          min-width: 80px;
+        }
+
+        .transition-actions {
+          align-self: flex-end;
+          margin-top: 4px;
         }
       }
     `,
@@ -233,22 +305,58 @@ export class TransitionEditor extends LitElement {
   private _validationError: string | null = null;
 
   /**
-   * Handle time input blur (focus loss)
-   * Only triggers update if the value actually changed
+   * Get the hour from the current time
    */
-  private _handleTimeBlur(e: Event): void {
-    const input = e.target as HTMLInputElement;
-    const newTime = input.value;
+  private _getHour(): string {
+    const time = this._getTime();
+    return time.split(':')[0] || '00';
+  }
 
+  /**
+   * Get the minute from the current time, snapped to nearest 15-minute interval
+   */
+  private _getMinute(): string {
+    const time = this._getTime();
+    const minute = parseInt(time.split(':')[1] || '0', 10);
+
+    // Snap to nearest 15-minute interval
+    const snapped = Math.round(minute / 15) * 15;
+    // Handle 60 -> 00 case
+    const validMinute = snapped >= 60 ? 0 : snapped;
+
+    return validMinute.toString().padStart(2, '0');
+  }
+
+  /**
+   * Handle hour select change
+   */
+  private _handleHourChange(e: Event): void {
+    const select = e.target as HTMLSelectElement;
+    const newHour = select.value;
+    const currentMinute = this._getMinute();
+    const newTime = `${newHour}:${currentMinute}`;
+
+    this._updateTime(newTime);
+  }
+
+  /**
+   * Handle minute select change
+   */
+  private _handleMinuteChange(e: Event): void {
+    const select = e.target as HTMLSelectElement;
+    const newMinute = select.value;
+    const currentHour = this._getHour();
+    const newTime = `${currentHour}:${newMinute}`;
+
+    this._updateTime(newTime);
+  }
+
+  /**
+   * Update the time value
+   */
+  private _updateTime(newTime: string): void {
     // Skip if value hasn't changed
     if (newTime === this.transition.time) {
-      this._validationError = null;
-      return;
-    }
-
-    // Validate time format
-    if (!this._isValidTime(newTime)) {
-      this._validationError = 'Invalid time format (use HH:mm)';
       return;
     }
 
@@ -304,14 +412,6 @@ export class TransitionEditor extends LitElement {
         composed: true,
       })
     );
-  }
-
-  /**
-   * Validate time format (HH:mm)
-   */
-  private _isValidTime(time: string): boolean {
-    const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
-    return timeRegex.test(time);
   }
 
   /**
@@ -371,17 +471,31 @@ export class TransitionEditor extends LitElement {
           <!-- Time Input -->
           <div class="time-field">
             <label class="field-label">Time</label>
-            <input
-              type="time"
-              class="time-input ${hasError ? 'error' : ''}"
-              .value=${this._getTime()}
-              @blur=${this._handleTimeBlur}
-              ?disabled=${timeInputDisabled}
-              step="900"
-              title=${isFirstTransition
-                ? 'Midnight transition cannot be changed'
-                : 'Select transition time'}
-            />
+            <div class="time-picker">
+              <select
+                class="time-select ${hasError ? 'error' : ''}"
+                .value=${this._getHour()}
+                @change=${this._handleHourChange}
+                ?disabled=${timeInputDisabled}
+                title=${isFirstTransition ? 'Midnight transition cannot be changed' : 'Select hour'}
+              >
+                ${Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0')).map(
+                  (hour) => html`<option value=${hour} ?selected=${hour === this._getHour()}>${hour}</option>`
+                )}
+              </select>
+              <span class="time-separator">:</span>
+              <select
+                class="time-select ${hasError ? 'error' : ''}"
+                .value=${this._getMinute()}
+                @change=${this._handleMinuteChange}
+                ?disabled=${timeInputDisabled}
+                title=${isFirstTransition ? 'Midnight transition cannot be changed' : 'Select minutes'}
+              >
+                ${['00', '15', '30', '45'].map(
+                  (minute) => html`<option value=${minute} ?selected=${minute === this._getMinute()}>${minute}</option>`
+                )}
+              </select>
+            </div>
             ${hasError
               ? html`<div class="error-message">${this._validationError}</div>`
               : ''}

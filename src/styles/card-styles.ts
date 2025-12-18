@@ -601,6 +601,7 @@ export const cardStyles = css`
     max-height: 90vh;
     overflow: auto;
     animation: slideUp 0.3s ease;
+    box-sizing: border-box;
   }
 
   @keyframes slideUp {
@@ -758,6 +759,15 @@ export const cardStyles = css`
     .modal {
       width: 95%;
       max-height: 95vh;
+      margin: 10px;
+    }
+
+    .modal-header {
+      padding: 12px 16px;
+    }
+
+    .modal-content {
+      padding: 12px;
     }
 
     .copy-dialog-days {
@@ -819,6 +829,25 @@ export const cardStyles = css`
     .transition-actions {
       width: 100%;
       justify-content: flex-end;
+    }
+
+    .modal {
+      width: calc(100% - 16px);
+      max-height: calc(100vh - 32px);
+      margin: 8px;
+      border-radius: 8px;
+    }
+
+    .modal-header {
+      padding: 10px 12px;
+    }
+
+    .modal-title {
+      font-size: 16px;
+    }
+
+    .modal-content {
+      padding: 10px;
     }
   }
 `;

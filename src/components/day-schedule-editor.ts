@@ -95,6 +95,27 @@ export class DayScheduleEditor extends LitElement {
         min-width: 120px;
         justify-content: center;
       }
+
+      /* Mobile responsiveness */
+      @media (max-width: 600px) {
+        .transitions-container {
+          max-height: 60vh;
+          padding-right: 4px;
+        }
+
+        .transitions-list {
+          gap: 8px;
+        }
+
+        .button-row {
+          flex-direction: column;
+        }
+
+        .button-row .button {
+          min-width: unset;
+          width: 100%;
+        }
+      }
     `
   ];
 
