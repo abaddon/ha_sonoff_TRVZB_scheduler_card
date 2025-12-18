@@ -932,10 +932,10 @@ export class ScheduleGraphView extends LitElement {
     let target = touchEvent.target as Element;
 
     // If that doesn't work, try elementFromPoint as fallback
-    if (!target || !(target instanceof Element) || !target.closest) {
+    if (!target || !(target instanceof Element)) {
       const fallbackTarget = document.elementFromPoint(touch.clientX, touch.clientY);
-          if (!fallbackTarget) return; // Early return if no target found
-          target = fallbackTarget as Element;
+      if (!fallbackTarget) return; // Early return if no target found
+      target = fallbackTarget;
     }
 
     const pointGroup = target.closest('.point-group');
