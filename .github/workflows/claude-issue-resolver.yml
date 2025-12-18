@@ -1,0 +1,277 @@
+name: Claude Issue Resolver
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  resolve-issue:
+    # Trigger conditions:
+    # 1. When 'claude-fix' label is added to an issue
+    # 2. When a comment is added to an issue that has 'needs-info' label AND was commented by issue author
+    if: |
+      (github.event_name == 'issues' && github.event.label.name == 'claude-fix') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.state == 'open' &&
+       contains(toJson(github.event.issue.labels.*.name), 'needs-info') &&
+       github.event.comment.user.login == github.event.issue.user.login)
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare issue context
+        id: issue-context
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number
+            });
+
+            // Get all comments for context
+            const commentText = comments.data
+              .map(c => `**${c.user.login}** (${c.created_at}):\n${c.body}`)
+              .join('\n\n---\n\n');
+
+            const issueContext = {
+              number: issue.number,
+              title: issue.title,
+              body: issue.body || 'No description provided',
+              author: issue.user.login,
+              labels: issue.labels.map(l => l.name),
+              comments: commentText || 'No comments yet',
+              hasNeedsInfo: issue.labels.some(l => l.name === 'needs-info')
+            };
+
+            core.setOutput('issue_number', issue.number);
+            core.setOutput('issue_title', issue.title);
+            core.setOutput('issue_body', issue.body || 'No description provided');
+            core.setOutput('issue_author', issue.user.login);
+            core.setOutput('has_needs_info', issueContext.hasNeedsInfo);
+            core.setOutput('issue_context', JSON.stringify(issueContext));
+
+            return issueContext;
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Allow Claude to use git, GitHub CLI, and run tests
+          allowed_tools: |
+            Bash(git:*)
+            Bash(gh:*)
+            Bash(npm test:*)
+            Bash(npm run:*)
+            Bash(npx:*)
+            Read
+            Write
+            Edit
+            Glob
+            Grep
+            Task
+
+          # Main prompt for Claude
+          prompt: |
+            # Issue Resolver Task
+
+            You are an AI assistant tasked with automatically resolving GitHub issues for this repository.
+
+            ## Issue Information
+
+            **Issue #${{ steps.issue-context.outputs.issue_number }}**: ${{ steps.issue-context.outputs.issue_title }}
+
+            **Description:**
+            ${{ steps.issue-context.outputs.issue_body }}
+
+            **Issue Author:** ${{ steps.issue-context.outputs.issue_author }}
+            **Has 'needs-info' label:** ${{ steps.issue-context.outputs.has_needs_info }}
+
+            **Full Context (including comments):**
+            ```json
+            ${{ steps.issue-context.outputs.issue_context }}
+            ```
+
+            ## Your Task
+
+            Follow this decision tree:
+
+            ### Step 1: Analyze the Issue
+
+            Read and understand the issue carefully. Determine if you have enough information to implement a fix.
+
+            **You have ENOUGH information if:**
+            - The bug/feature is clearly described
+            - You can identify which files/components are affected
+            - You understand what the expected behavior should be
+            - For bugs: reproduction steps are clear OR the issue is self-evident from the code
+
+            **You need MORE information if:**
+            - The issue is vague or unclear
+            - You cannot determine which part of the codebase is affected
+            - Expected behavior is ambiguous
+            - Bug cannot be reproduced or understood without more details
+
+            ### Step 2A: If MORE INFORMATION is needed
+
+            1. Use the GitHub CLI to comment on the issue asking specific questions:
+            ```bash
+            gh issue comment ${{ steps.issue-context.outputs.issue_number }} --body "YOUR_CLARIFICATION_QUESTIONS"
+            ```
+
+            2. Add the 'needs-info' label and remove 'claude-fix':
+            ```bash
+            gh issue edit ${{ steps.issue-context.outputs.issue_number }} --add-label "needs-info" --remove-label "claude-fix"
+            ```
+
+            3. Stop here - do not proceed with implementation.
+
+            ### Step 2B: If you have ENOUGH information to proceed
+
+            1. **Assign the issue** to indicate work is in progress:
+            ```bash
+            gh issue edit ${{ steps.issue-context.outputs.issue_number }} --add-assignee ""
+            ```
+            Note: Leave assignee empty as bot cannot self-assign, but add a comment indicating work has started.
+
+            2. **Comment that you're starting work:**
+            ```bash
+            gh issue comment ${{ steps.issue-context.outputs.issue_number }} --body "🤖 I'm analyzing this issue and starting to work on a fix. I'll create a PR shortly."
+            ```
+
+            3. **Remove 'needs-info' label if present:**
+            ```bash
+            gh issue edit ${{ steps.issue-context.outputs.issue_number }} --remove-label "needs-info" 2>/dev/null || true
+            ```
+
+            4. **Create a new branch:**
+            ```bash
+            git checkout -b fix/issue-${{ steps.issue-context.outputs.issue_number }}
+            ```
+
+            5. **Analyze the codebase:**
+            - Read CLAUDE.md to understand the project structure
+            - Explore relevant files to understand the current implementation
+            - Identify the root cause of the bug or where to add the feature
+
+            6. **Plan your implementation:**
+            - Define clear steps for the fix
+            - Consider edge cases
+            - Think about what tests need to be added or updated
+
+            7. **Implement the fix:**
+            - Make minimal, focused changes
+            - Follow existing code style and patterns
+            - Add comments only where necessary
+
+            8. **Update or create tests:**
+            - Add tests that validate your fix
+            - Ensure existing tests still pass
+            - Run: `npm test`
+
+            9. **Verify the build:**
+            ```bash
+            npm run build
+            ```
+
+            10. **Commit your changes:**
+            ```bash
+            git add .
+            git commit -m "$(cat <<'EOF'
+            fix: [Brief description of the fix]
+
+            Fixes #${{ steps.issue-context.outputs.issue_number }}
+
+            [Detailed description of what was changed and why]
+
+            🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+            Co-Authored-By: Claude <noreply@anthropic.com>
+            EOF
+            )"
+            ```
+
+            11. **Push the branch:**
+            ```bash
+            git push -u origin fix/issue-${{ steps.issue-context.outputs.issue_number }}
+            ```
+
+            12. **Create a Pull Request:**
+            ```bash
+            gh pr create --title "fix: [Title describing the fix]" --body "$(cat <<'EOF'
+            ## Summary
+
+            [Brief description of the changes]
+
+            ## Changes Made
+
+            - [List of specific changes]
+
+            ## Related Issue
+
+            Fixes #${{ steps.issue-context.outputs.issue_number }}
+
+            ## Test Plan
+
+            - [ ] Existing tests pass
+            - [ ] New tests added for the fix
+            - [ ] Manual testing completed
+
+            ---
+
+            🤖 Generated with [Claude Code](https://claude.com/claude-code)
+            EOF
+            )"
+            ```
+
+            ## Important Guidelines
+
+            1. **Be conservative**: Only make changes that directly address the issue
+            2. **Don't over-engineer**: Simple fixes are better than complex ones
+            3. **Test thoroughly**: Always run tests before creating the PR
+            4. **Document clearly**: Your PR description should explain what and why
+            5. **Ask when unsure**: If anything is ambiguous, ask for clarification rather than guessing
+
+            ## Repository Context
+
+            This is a Home Assistant custom card for Sonoff TRVZB thermostatic radiator valves.
+            Key directories:
+            - `src/` - Source code (TypeScript/LitElement)
+            - `src/components/` - UI components
+            - `src/models/` - Data models and types
+            - `src/services/` - Home Assistant integration
+            - `src/utils/` - Utility functions
+            - `test/` - Test files
+
+            Now, analyze the issue and proceed with the appropriate action.
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

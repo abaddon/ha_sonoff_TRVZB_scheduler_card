@@ -2,10 +2,12 @@
 name: Bug report
 about: Create a report to help us improve
 title: ''
-labels: ''
+labels: 'bug'
 assignees: ''
 
 ---
+
+> **Tip:** Add the `claude-fix` label to this issue to have Claude AI automatically analyze and attempt to fix it!
 
 **Describe the bug**
 A clear and concise description of what the bug is.

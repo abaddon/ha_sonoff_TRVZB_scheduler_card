@@ -1,0 +1,30 @@
+# Labels for Claude Issue Resolver
+# These labels are used by the claude-issue-resolver.yml workflow
+
+- name: claude-fix
+  color: "7057ff"
+  description: "Request Claude to automatically analyze and fix this issue"
+
+- name: needs-info
+  color: "d876e3"
+  description: "Claude needs more information to proceed with the fix"
+
+- name: bug
+  color: "d73a4a"
+  description: "Something isn't working"
+
+- name: enhancement
+  color: "a2eeef"
+  description: "New feature or request"
+
+- name: documentation
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+
+- name: good first issue
+  color: "7057ff"
+  description: "Good for newcomers"
+
+- name: help wanted
+  color: "008672"
+  description: "Extra attention is needed"

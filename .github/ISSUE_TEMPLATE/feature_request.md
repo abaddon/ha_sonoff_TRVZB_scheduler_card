@@ -2,10 +2,12 @@
 name: Feature request
 about: Suggest an idea for this project
 title: ''
-labels: ''
+labels: 'enhancement'
 assignees: ''
 
 ---
+
+> **Tip:** Add the `claude-fix` label to this issue to have Claude AI automatically analyze and attempt to implement it!
 
 **Is your feature request related to a problem? Please describe.**
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
