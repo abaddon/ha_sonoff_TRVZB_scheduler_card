@@ -34,6 +34,14 @@ export function isInvalidSensorState(state: string | null | undefined): boolean 
 }
 
 /**
+ * Type guard to verify a partial schedule has all 7 days populated
+ * Used to safely narrow Partial<MQTTWeeklySchedule> to MQTTWeeklySchedule
+ */
+function isCompleteMQTTSchedule(schedule: Partial<MQTTWeeklySchedule>): schedule is MQTTWeeklySchedule {
+  return DAYS_OF_WEEK.every(day => typeof schedule[day] === 'string');
+}
+
+/**
  * Entity information for display
  */
 export interface EntityInfo {
@@ -118,15 +126,15 @@ export function getScheduleFromSensor(hass: HomeAssistant, climateEntityId: stri
       mqttSchedule[day] = dayScheduleString;
     }
 
-    // If we're missing any days, return null
-    if (missingDays.length > 0) {
+    // Verify all days are present using type guard
+    if (!isCompleteMQTTSchedule(mqttSchedule)) {
       console.error(`Missing schedule data for days: ${missingDays.join(', ')}`);
       return null;
     }
 
     // Parse the MQTT format to our internal WeeklySchedule format
-    const schedule = parseWeeklySchedule(mqttSchedule as MQTTWeeklySchedule);
-    return schedule;
+    // Type is now safely narrowed to MQTTWeeklySchedule by the type guard
+    return parseWeeklySchedule(mqttSchedule);
   } catch (error) {
     console.error(`Error getting schedule from sensors for ${climateEntityId}:`, error);
     return null;

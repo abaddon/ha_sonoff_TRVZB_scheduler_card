@@ -55,6 +55,9 @@ export class TRVZBSchedulerCard extends LitElement {
   // Timeout ID for clearing stale pending save (prevents indefinite blocking if sensors never update)
   private _pendingSaveTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+  // Unique ID for current pending save operation (prevents race conditions on rapid saves)
+  private _pendingSaveId: number = 0;
+
   // Timeout duration for pending save expiry (30 seconds)
   private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
 
@@ -64,6 +67,7 @@ export class TRVZBSchedulerCard extends LitElement {
    */
   private _clearPendingSave(): void {
     this._pendingSaveSchedule = null;
+    this._pendingSaveId = 0;
     if (this._pendingSaveTimeoutId !== null) {
       clearTimeout(this._pendingSaveTimeoutId);
       this._pendingSaveTimeoutId = null;
@@ -152,6 +156,15 @@ export class TRVZBSchedulerCard extends LitElement {
    */
   public getCardSize(): number {
     return 4;
+  }
+
+  /**
+   * Lifecycle: component disconnected from DOM
+   * Clean up pending timeouts to prevent memory leaks
+   */
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._clearPendingSave();
   }
 
   /**
@@ -330,12 +343,15 @@ export class TRVZBSchedulerCard extends LitElement {
     this._clearPendingSave();
 
     // Store the schedule in MQTT format to compare with sensor updates
-    const pendingSchedule = serializeWeeklySchedule(this._schedule);
-    this._pendingSaveSchedule = pendingSchedule;
+    this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
+
+    // Generate unique ID for this save operation (prevents race conditions on rapid saves)
+    const saveId = Date.now();
+    this._pendingSaveId = saveId;
 
     // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
     this._pendingSaveTimeoutId = setTimeout(() => {
-      if (this._pendingSaveSchedule === pendingSchedule) {
+      if (this._pendingSaveId === saveId) {
         this._clearPendingSave();
       }
     }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);

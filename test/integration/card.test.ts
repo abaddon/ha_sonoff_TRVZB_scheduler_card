@@ -183,19 +183,22 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
 
       await waitForUpdate(card);
 
-      // Should show error or use default schedule
+      // Should use default schedule and show error when sensors have invalid state
       const scheduleState = (card as any)._schedule;
+      const errorState = (card as any)._error;
+      const hasChanges = (card as any)._hasUnsavedChanges;
 
-      // Either shows error with null schedule, or uses default schedule
-      if (scheduleState === null) {
-        const errorMessage = queryShadow(card, '.message-error');
-        expect(errorMessage).toBeTruthy();
-      } else {
-        // Has default schedule
-        expect(scheduleState).toBeTruthy();
-        const hasChanges = (card as any)._hasUnsavedChanges;
-        expect(hasChanges).toBe(true);
-      }
+      // Sensors exist but have invalid state -> use default schedule with error
+      expect(scheduleState).not.toBeNull();
+      expect(scheduleState.monday).toBeTruthy();
+      expect(scheduleState.monday.transitions).toBeInstanceOf(Array);
+      expect(hasChanges).toBe(true);
+      expect(errorState).toBe('No valid schedule found on sensors. Using default schedule.');
+
+      // Error message should be displayed in the UI
+      const errorMessage = queryShadow(card, '.message-error');
+      expect(errorMessage).toBeTruthy();
+      expect(errorMessage?.textContent).toContain('No valid schedule found');
     });
 
     it('should use custom name from config', async () => {
