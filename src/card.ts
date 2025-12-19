@@ -5,8 +5,8 @@
 
 import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule } from './models/types';
-import { getScheduleFromSensor, getSensorEntityId, saveSchedule, getEntityInfo, entityExists } from './services/ha-service';
+import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, DAYS_OF_WEEK } from './models/types';
+import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists, isInvalidSensorState } from './services/ha-service';
 import { createEmptyWeeklySchedule, serializeWeeklySchedule } from './models/schedule';
 import { cardStyles, getTemperatureColor } from './styles/card-styles';
 
@@ -46,12 +46,126 @@ export class TRVZBSchedulerCard extends LitElement {
   @state() private _error: string | null = null;
   @state() private _hasUnsavedChanges: boolean = false;
 
-  // Track previous entity IDs for change detection
+  // Track previous entity ID for change detection
   private _previousEntityId: string | null = null;
-  private _previousSensorEntityId: string | null = null;
 
-  // Track the schedule we saved (in MQTT format) to ignore updates until sensor matches
+  // Track the schedule we saved (in MQTT format) to ignore updates until sensors match
   private _pendingSaveSchedule: MQTTWeeklySchedule | null = null;
+
+  // Timeout ID for clearing stale pending save (prevents indefinite blocking if sensors never update)
+  private _pendingSaveTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  // Unique ID for current pending save operation (prevents race conditions on rapid saves)
+  private _pendingSaveId: number = 0;
+
+  // Timeout duration for pending save expiry (30 seconds)
+  private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
+
+  // Cached hash of sensor states for efficient change detection
+  private _lastSensorStateHash: string | null = null;
+
+  /**
+   * Compute a simple hash of all day sensor states for efficient change detection
+   * Returns a string like "state1|state2|...|state7" or null if any sensor is missing
+   */
+  private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string | null {
+    const states: string[] = [];
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const sensor = hass.states[daySensorId];
+      // Include 'undefined' marker for missing sensors to detect appearance/disappearance
+      states.push(sensor ? sensor.state : '\0');
+    }
+    return states.join('|');
+  }
+
+  /**
+   * Clear pending save state and associated timeout
+   * Call this when sensors have caught up or on error
+   */
+  private _clearPendingSave(): void {
+    this._pendingSaveSchedule = null;
+    this._pendingSaveId = 0;
+    if (this._pendingSaveTimeoutId !== null) {
+      clearTimeout(this._pendingSaveTimeoutId);
+      this._pendingSaveTimeoutId = null;
+    }
+  }
+
+  /**
+   * Check if all day sensors match the pending save schedule
+   * Returns true if sensors have caught up to what we saved
+   */
+  private _allDaySensorsMatch(entityId: string, pendingSchedule: MQTTWeeklySchedule): boolean {
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const sensor = this.hass.states[daySensorId];
+      const expectedState = pendingSchedule[day];
+
+      if (!sensor || expectedState === undefined || sensor.state !== expectedState) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Detect if any day sensor has changed between old and new hass state
+   * Uses hash-based comparison for efficiency (avoids looping on every update)
+   * Also detects sensor appearance (was missing, now exists) or disappearance
+   */
+  private _hasDaySensorChanges(entityId: string, oldHass: HomeAssistant): boolean {
+    if (!this.hass) return false;
+
+    // Compute hashes for old and new states
+    const oldHash = this._computeSensorStateHash(oldHass, entityId);
+    const newHash = this._computeSensorStateHash(this.hass, entityId);
+
+    // Quick comparison - if hashes match, nothing changed
+    if (oldHash === newHash) {
+      return false;
+    }
+
+    // Hashes differ - update cache and check if new state has valid data
+    this._lastSensorStateHash = newHash;
+
+    // Check if any sensor appeared with valid data (not just state changes)
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const oldSensor = oldHass.states[daySensorId];
+      const newSensor = this.hass.states[daySensorId];
+
+      // Only trigger reload if sensor appeared with valid data
+      if (!oldSensor && newSensor && !isInvalidSensorState(newSensor.state)) {
+        return true;
+      }
+
+      // Trigger on disappearance or valid state change
+      if (oldSensor && !newSensor) {
+        return true;
+      }
+
+      if (oldSensor && newSensor && oldSensor.state !== newSensor.state) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Get list of missing day sensors for error reporting
+   */
+  private _getMissingSensors(entityId: string): string[] {
+    const missing: string[] = [];
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      if (!entityExists(this.hass, daySensorId)) {
+        missing.push(daySensorId);
+      }
+    }
+    return missing;
+  }
 
   /**
    * Set card configuration
@@ -79,6 +193,15 @@ export class TRVZBSchedulerCard extends LitElement {
   }
 
   /**
+   * Lifecycle: component disconnected from DOM
+   * Clean up pending timeouts to prevent memory leaks
+   */
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._clearPendingSave();
+  }
+
+  /**
    * Lifecycle: component updated
    * Load schedule when hass or entity changes
    */
@@ -87,61 +210,42 @@ export class TRVZBSchedulerCard extends LitElement {
 
     if (changedProps.has('hass') && this.hass && this.config) {
       const currentEntityId = this.config.entity;
-      const currentSensorEntityId = getSensorEntityId(currentEntityId, this.config.schedule_sensor);
 
-      // Check if entity or sensor changed or if this is the first load
-      if (currentEntityId !== this._previousEntityId || currentSensorEntityId !== this._previousSensorEntityId) {
+      // Check if entity changed or if this is the first load
+      if (currentEntityId !== this._previousEntityId) {
         this._previousEntityId = currentEntityId;
-        this._previousSensorEntityId = currentSensorEntityId;
         this._loadSchedule();
         return;
       }
 
-      // Check if sensor entity state changed (for schedule updates)
-      // Skip if we're currently saving
+      // Skip change detection if we're currently saving
       if (this._saving) {
         return;
       }
 
-      // If we have a pending save, check if sensor now matches what we saved
+      // If we have a pending save, check if all sensors now match what we saved
       if (this._pendingSaveSchedule) {
-        const newSensor = this.hass.states[currentSensorEntityId];
-        if (newSensor) {
-          const sensorSchedule = newSensor.attributes.schedule;
-          // Check if sensor now matches our saved schedule
-          if (JSON.stringify(sensorSchedule) === JSON.stringify(this._pendingSaveSchedule)) {
-            // Sensor caught up - clear pending and resume normal operation
-            this._pendingSaveSchedule = null;
-          }
-          // Either way, don't reload while we have a pending save
-          return;
+        if (this._allDaySensorsMatch(currentEntityId, this._pendingSaveSchedule)) {
+          // All sensors caught up - clear pending and resume normal operation
+          this._clearPendingSave();
         }
+        // Don't reload while we have a pending save
+        return;
       }
 
-      // Normal external change detection
+      // Normal external change detection - check if any day sensor changed
+      // Also detects sensor appearance (e.g., after Zigbee2MQTT restart)
       if (changedProps.has('hass')) {
         const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
-        if (oldHass) {
-          const oldSensor = oldHass.states[currentSensorEntityId];
-          const newSensor = this.hass.states[currentSensorEntityId];
-
-          // Compare sensor states to detect schedule changes
-          if (oldSensor && newSensor) {
-            const oldSchedule = oldSensor.attributes.schedule;
-            const newSchedule = newSensor.attributes.schedule;
-
-            // Reload if schedule changed externally
-            if (JSON.stringify(oldSchedule) !== JSON.stringify(newSchedule)) {
-              this._loadSchedule();
-            }
-          }
+        if (oldHass && this._hasDaySensorChanges(currentEntityId, oldHass)) {
+          this._loadSchedule();
         }
       }
     }
   }
 
   /**
-   * Load schedule from sensor entity
+   * Load schedule from 7 day sensor entities
    */
   private _loadSchedule(): void {
     if (!this.hass || !this.config?.entity) {
@@ -158,27 +262,26 @@ export class TRVZBSchedulerCard extends LitElement {
       return;
     }
 
-    // Get sensor entity ID (derived or configured)
-    const sensorEntityId = getSensorEntityId(this.config.entity, this.config.schedule_sensor);
+    // Check if all day sensors exist
+    const missingSensors = this._getMissingSensors(this.config.entity);
 
-    // Check if sensor entity exists
-    if (!entityExists(this.hass, sensorEntityId)) {
-      this._error = `Schedule sensor not found: ${sensorEntityId}`;
+    if (missingSensors.length > 0) {
+      this._error = `Schedule sensors not found: ${missingSensors.join(', ')}`;
       this._schedule = null;
       return;
     }
 
-    // Get schedule from sensor entity
-    const schedule = getScheduleFromSensor(this.hass, sensorEntityId);
+    // Get schedule from all day sensors
+    const schedule = getScheduleFromSensor(this.hass, this.config.entity);
 
     if (schedule) {
       this._schedule = schedule;
       this._hasUnsavedChanges = false;
     } else {
-      // Sensor exists but has no schedule - use default
+      // Sensors exist but have no valid schedule - use default
       this._schedule = createEmptyWeeklySchedule();
       this._hasUnsavedChanges = true;
-      this._error = 'No schedule found on sensor. Using default schedule.';
+      this._error = 'No valid schedule found on sensors. Using default schedule.';
     }
   }
 
@@ -270,8 +373,24 @@ export class TRVZBSchedulerCard extends LitElement {
     this._saving = true;
     this._error = null;
 
+    // Clear any existing pending save timeout
+    this._clearPendingSave();
+
     // Store the schedule in MQTT format to compare with sensor updates
     this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
+
+    // Generate unique ID for this save operation (prevents race conditions on rapid saves)
+    const saveId = Date.now();
+    this._pendingSaveId = saveId;
+
+    // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
+    // Store timeout ID first, then verify both saveId and timeoutId match to prevent race conditions
+    const timeoutId = setTimeout(() => {
+      if (this._pendingSaveId === saveId && this._pendingSaveTimeoutId === timeoutId) {
+        this._clearPendingSave();
+      }
+    }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);
+    this._pendingSaveTimeoutId = timeoutId;
 
     try {
       await saveSchedule(this.hass, this.config.entity, this._schedule);
@@ -281,7 +400,7 @@ export class TRVZBSchedulerCard extends LitElement {
       this._error = error instanceof Error ? error.message : 'Failed to save schedule';
       console.error('Save schedule error:', error);
       // Clear pending on error so we can detect external changes again
-      this._pendingSaveSchedule = null;
+      this._clearPendingSave();
     } finally {
       this._saving = false;
     }
