@@ -3,8 +3,35 @@
  * Handles reading/writing TRVZB schedules via Home Assistant and MQTT
  */
 
-import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule } from '../models/types';
+import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK } from '../models/types';
 import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule } from '../models/schedule';
+
+/**
+ * Invalid sensor states that indicate no valid data is available
+ * Home Assistant sensors can report various states when data is not ready
+ */
+const INVALID_SENSOR_STATES = new Set([
+  'unavailable',
+  'unknown',
+  'none',
+  'null',
+  '',
+  'n/a',
+  'N/A'
+]);
+
+/**
+ * Check if a sensor state indicates invalid/unavailable data
+ *
+ * @param state - The sensor state string to check
+ * @returns True if the state indicates invalid data
+ */
+export function isInvalidSensorState(state: string | null | undefined): boolean {
+  if (state == null) {
+    return true;
+  }
+  return INVALID_SENSOR_STATES.has(state) || INVALID_SENSOR_STATES.has(state.toLowerCase());
+}
 
 /**
  * Entity information for display
@@ -65,15 +92,11 @@ export function getSensorEntityId(climateEntityId: string, configuredSensor?: st
  */
 export function getScheduleFromSensor(hass: HomeAssistant, climateEntityId: string): WeeklySchedule | null {
   try {
-    const days: Array<keyof MQTTWeeklySchedule> = [
-      'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
-    ];
-
     const mqttSchedule: Partial<MQTTWeeklySchedule> = {};
-    let missingDays: string[] = [];
+    const missingDays: string[] = [];
 
     // Read each day's schedule from its own sensor
-    for (const day of days) {
+    for (const day of DAYS_OF_WEEK) {
       const daySensorId = deriveDaySensorEntityId(climateEntityId, day);
       const sensorEntity = hass.states[daySensorId];
 
@@ -86,7 +109,7 @@ export function getScheduleFromSensor(hass: HomeAssistant, climateEntityId: stri
       // The schedule string is in the sensor's state
       const dayScheduleString = sensorEntity.state;
 
-      if (!dayScheduleString || dayScheduleString === 'unavailable' || dayScheduleString === 'unknown') {
+      if (isInvalidSensorState(dayScheduleString)) {
         console.warn(`No schedule state found on sensor: ${daySensorId}`);
         missingDays.push(day);
         continue;
@@ -184,8 +207,6 @@ export async function saveSchedule(
       topic: topic,
       payload: payload
     });
-
-    console.log(`Schedule saved successfully for ${entityId}`);
   } catch (error) {
     console.error(`Error saving schedule for ${entityId}:`, error);
     throw new Error(`Failed to save schedule: ${error instanceof Error ? error.message : 'Unknown error'}`);

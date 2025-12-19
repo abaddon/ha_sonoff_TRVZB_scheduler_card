@@ -5,8 +5,8 @@
 
 import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule } from './models/types';
-import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists } from './services/ha-service';
+import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, DAYS_OF_WEEK } from './models/types';
+import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists, isInvalidSensorState } from './services/ha-service';
 import { createEmptyWeeklySchedule, serializeWeeklySchedule } from './models/schedule';
 import { cardStyles, getTemperatureColor } from './styles/card-styles';
 
@@ -51,6 +51,64 @@ export class TRVZBSchedulerCard extends LitElement {
 
   // Track the schedule we saved (in MQTT format) to ignore updates until sensors match
   private _pendingSaveSchedule: MQTTWeeklySchedule | null = null;
+
+  /**
+   * Check if all day sensors match the pending save schedule
+   * Returns true if sensors have caught up to what we saved
+   */
+  private _allDaySensorsMatch(entityId: string, pendingSchedule: MQTTWeeklySchedule): boolean {
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const sensor = this.hass.states[daySensorId];
+
+      if (!sensor || sensor.state !== pendingSchedule[day]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Detect if any day sensor has changed between old and new hass state
+   * Also detects sensor appearance (was missing, now exists) or disappearance
+   */
+  private _hasDaySensorChanges(entityId: string, oldHass: HomeAssistant): boolean {
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const oldSensor = oldHass.states[daySensorId];
+      const newSensor = this.hass.states[daySensorId];
+
+      // Detect sensor appearance (e.g., after Zigbee2MQTT restart)
+      if (!oldSensor && newSensor && !isInvalidSensorState(newSensor.state)) {
+        return true;
+      }
+
+      // Detect sensor disappearance
+      if (oldSensor && !newSensor) {
+        return true;
+      }
+
+      // Detect state change when both exist
+      if (oldSensor && newSensor && oldSensor.state !== newSensor.state) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Get list of missing day sensors for error reporting
+   */
+  private _getMissingSensors(entityId: string): string[] {
+    const missing: string[] = [];
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      if (!entityExists(this.hass, daySensorId)) {
+        missing.push(daySensorId);
+      }
+    }
+    return missing;
+  }
 
   /**
    * Set card configuration
@@ -101,22 +159,7 @@ export class TRVZBSchedulerCard extends LitElement {
 
       // If we have a pending save, check if all sensors now match what we saved
       if (this._pendingSaveSchedule) {
-        const days: Array<keyof MQTTWeeklySchedule> = [
-          'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
-        ];
-
-        let allMatch = true;
-        for (const day of days) {
-          const daySensorId = deriveDaySensorEntityId(currentEntityId, day);
-          const sensor = this.hass.states[daySensorId];
-
-          if (!sensor || sensor.state !== this._pendingSaveSchedule[day]) {
-            allMatch = false;
-            break;
-          }
-        }
-
-        if (allMatch) {
+        if (this._allDaySensorsMatch(currentEntityId, this._pendingSaveSchedule)) {
           // All sensors caught up - clear pending and resume normal operation
           this._pendingSaveSchedule = null;
         }
@@ -125,30 +168,11 @@ export class TRVZBSchedulerCard extends LitElement {
       }
 
       // Normal external change detection - check if any day sensor changed
+      // Also detects sensor appearance (e.g., after Zigbee2MQTT restart)
       if (changedProps.has('hass')) {
         const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
-        if (oldHass) {
-          const days: Array<keyof MQTTWeeklySchedule> = [
-            'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
-          ];
-
-          let hasChanges = false;
-          for (const day of days) {
-            const daySensorId = deriveDaySensorEntityId(currentEntityId, day);
-            const oldSensor = oldHass.states[daySensorId];
-            const newSensor = this.hass.states[daySensorId];
-
-            // Compare sensor states
-            if (oldSensor && newSensor && oldSensor.state !== newSensor.state) {
-              hasChanges = true;
-              break;
-            }
-          }
-
-          // Reload if any day schedule changed externally
-          if (hasChanges) {
-            this._loadSchedule();
-          }
+        if (oldHass && this._hasDaySensorChanges(currentEntityId, oldHass)) {
+          this._loadSchedule();
         }
       }
     }
@@ -173,17 +197,7 @@ export class TRVZBSchedulerCard extends LitElement {
     }
 
     // Check if all day sensors exist
-    const days: Array<keyof MQTTWeeklySchedule> = [
-      'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
-    ];
-    const missingSensors: string[] = [];
-
-    for (const day of days) {
-      const daySensorId = deriveDaySensorEntityId(this.config.entity, day);
-      if (!entityExists(this.hass, daySensorId)) {
-        missingSensors.push(daySensorId);
-      }
-    }
+    const missingSensors = this._getMissingSensors(this.config.entity);
 
     if (missingSensors.length > 0) {
       this._error = `Schedule sensors not found: ${missingSensors.join(', ')}`;

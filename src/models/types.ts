@@ -1,6 +1,11 @@
 // Days of the week
 export type DayOfWeek = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday';
 
+// Ordered array of days of the week - single source of truth for iteration
+export const DAYS_OF_WEEK: readonly DayOfWeek[] = [
+  'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
+] as const;
+
 // A single transition (time + temperature)
 export interface Transition {
   id?: string;         // unique identifier for UI tracking (not persisted to MQTT)
