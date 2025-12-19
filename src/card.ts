@@ -52,6 +52,24 @@ export class TRVZBSchedulerCard extends LitElement {
   // Track the schedule we saved (in MQTT format) to ignore updates until sensors match
   private _pendingSaveSchedule: MQTTWeeklySchedule | null = null;
 
+  // Timeout ID for clearing stale pending save (prevents indefinite blocking if sensors never update)
+  private _pendingSaveTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  // Timeout duration for pending save expiry (30 seconds)
+  private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
+
+  /**
+   * Clear pending save state and associated timeout
+   * Call this when sensors have caught up or on error
+   */
+  private _clearPendingSave(): void {
+    this._pendingSaveSchedule = null;
+    if (this._pendingSaveTimeoutId !== null) {
+      clearTimeout(this._pendingSaveTimeoutId);
+      this._pendingSaveTimeoutId = null;
+    }
+  }
+
   /**
    * Check if all day sensors match the pending save schedule
    * Returns true if sensors have caught up to what we saved
@@ -60,8 +78,9 @@ export class TRVZBSchedulerCard extends LitElement {
     for (const day of DAYS_OF_WEEK) {
       const daySensorId = deriveDaySensorEntityId(entityId, day);
       const sensor = this.hass.states[daySensorId];
+      const expectedState = pendingSchedule[day];
 
-      if (!sensor || sensor.state !== pendingSchedule[day]) {
+      if (!sensor || !expectedState || sensor.state !== expectedState) {
         return false;
       }
     }
@@ -161,7 +180,7 @@ export class TRVZBSchedulerCard extends LitElement {
       if (this._pendingSaveSchedule) {
         if (this._allDaySensorsMatch(currentEntityId, this._pendingSaveSchedule)) {
           // All sensors caught up - clear pending and resume normal operation
-          this._pendingSaveSchedule = null;
+          this._clearPendingSave();
         }
         // Don't reload while we have a pending save
         return;
@@ -307,8 +326,19 @@ export class TRVZBSchedulerCard extends LitElement {
     this._saving = true;
     this._error = null;
 
+    // Clear any existing pending save timeout
+    this._clearPendingSave();
+
     // Store the schedule in MQTT format to compare with sensor updates
-    this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
+    const pendingSchedule = serializeWeeklySchedule(this._schedule);
+    this._pendingSaveSchedule = pendingSchedule;
+
+    // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
+    this._pendingSaveTimeoutId = setTimeout(() => {
+      if (this._pendingSaveSchedule === pendingSchedule) {
+        this._clearPendingSave();
+      }
+    }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);
 
     try {
       await saveSchedule(this.hass, this.config.entity, this._schedule);
@@ -318,7 +348,7 @@ export class TRVZBSchedulerCard extends LitElement {
       this._error = error instanceof Error ? error.message : 'Failed to save schedule';
       console.error('Save schedule error:', error);
       // Clear pending on error so we can detect external changes again
-      this._pendingSaveSchedule = null;
+      this._clearPendingSave();
     } finally {
       this._saving = false;
     }

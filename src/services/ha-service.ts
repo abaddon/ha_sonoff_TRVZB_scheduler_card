@@ -3,12 +3,13 @@
  * Handles reading/writing TRVZB schedules via Home Assistant and MQTT
  */
 
-import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK } from '../models/types';
+import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek } from '../models/types';
 import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule } from '../models/schedule';
 
 /**
  * Invalid sensor states that indicate no valid data is available
  * Home Assistant sensors can report various states when data is not ready
+ * All values are lowercase for case-insensitive comparison
  */
 const INVALID_SENSOR_STATES = new Set([
   'unavailable',
@@ -16,8 +17,7 @@ const INVALID_SENSOR_STATES = new Set([
   'none',
   'null',
   '',
-  'n/a',
-  'N/A'
+  'n/a'
 ]);
 
 /**
@@ -30,7 +30,7 @@ export function isInvalidSensorState(state: string | null | undefined): boolean 
   if (state == null) {
     return true;
   }
-  return INVALID_SENSOR_STATES.has(state) || INVALID_SENSOR_STATES.has(state.toLowerCase());
+  return INVALID_SENSOR_STATES.has(state.toLowerCase());
 }
 
 /**
@@ -51,7 +51,7 @@ export interface EntityInfo {
  * @param day - Day of week (e.g., "monday")
  * @returns Sensor entity ID (e.g., "sensor.living_room_trvzb_weekly_schedule_monday")
  */
-export function deriveDaySensorEntityId(climateEntityId: string, day: string): string {
+export function deriveDaySensorEntityId(climateEntityId: string, day: DayOfWeek): string {
   const deviceName = extractFriendlyName(climateEntityId);
   return `sensor.${deviceName}_weekly_schedule_${day}`;
 }
