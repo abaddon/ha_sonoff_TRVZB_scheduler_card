@@ -128,7 +128,7 @@ export function getScheduleFromSensor(hass: HomeAssistant, climateEntityId: stri
 
     // Verify all days are present using type guard
     if (!isCompleteMQTTSchedule(mqttSchedule)) {
-      console.error(`Missing schedule data for days: ${missingDays.join(', ')}`);
+      console.error(`Missing schedule data for ${climateEntityId}: days ${missingDays.join(', ')}`);
       return null;
     }
 

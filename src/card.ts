@@ -61,6 +61,24 @@ export class TRVZBSchedulerCard extends LitElement {
   // Timeout duration for pending save expiry (30 seconds)
   private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
 
+  // Cached hash of sensor states for efficient change detection
+  private _lastSensorStateHash: string | null = null;
+
+  /**
+   * Compute a simple hash of all day sensor states for efficient change detection
+   * Returns a string like "state1|state2|...|state7" or null if any sensor is missing
+   */
+  private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string | null {
+    const states: string[] = [];
+    for (const day of DAYS_OF_WEEK) {
+      const daySensorId = deriveDaySensorEntityId(entityId, day);
+      const sensor = hass.states[daySensorId];
+      // Include 'undefined' marker for missing sensors to detect appearance/disappearance
+      states.push(sensor ? sensor.state : '\0');
+    }
+    return states.join('|');
+  }
+
   /**
    * Clear pending save state and associated timeout
    * Call this when sensors have caught up or on error
@@ -84,7 +102,7 @@ export class TRVZBSchedulerCard extends LitElement {
       const sensor = this.hass.states[daySensorId];
       const expectedState = pendingSchedule[day];
 
-      if (!sensor || !expectedState || sensor.state !== expectedState) {
+      if (!sensor || expectedState === undefined || sensor.state !== expectedState) {
         return false;
       }
     }
@@ -93,29 +111,45 @@ export class TRVZBSchedulerCard extends LitElement {
 
   /**
    * Detect if any day sensor has changed between old and new hass state
+   * Uses hash-based comparison for efficiency (avoids looping on every update)
    * Also detects sensor appearance (was missing, now exists) or disappearance
    */
   private _hasDaySensorChanges(entityId: string, oldHass: HomeAssistant): boolean {
+    if (!this.hass) return false;
+
+    // Compute hashes for old and new states
+    const oldHash = this._computeSensorStateHash(oldHass, entityId);
+    const newHash = this._computeSensorStateHash(this.hass, entityId);
+
+    // Quick comparison - if hashes match, nothing changed
+    if (oldHash === newHash) {
+      return false;
+    }
+
+    // Hashes differ - update cache and check if new state has valid data
+    this._lastSensorStateHash = newHash;
+
+    // Check if any sensor appeared with valid data (not just state changes)
     for (const day of DAYS_OF_WEEK) {
       const daySensorId = deriveDaySensorEntityId(entityId, day);
       const oldSensor = oldHass.states[daySensorId];
       const newSensor = this.hass.states[daySensorId];
 
-      // Detect sensor appearance (e.g., after Zigbee2MQTT restart)
+      // Only trigger reload if sensor appeared with valid data
       if (!oldSensor && newSensor && !isInvalidSensorState(newSensor.state)) {
         return true;
       }
 
-      // Detect sensor disappearance
+      // Trigger on disappearance or valid state change
       if (oldSensor && !newSensor) {
         return true;
       }
 
-      // Detect state change when both exist
       if (oldSensor && newSensor && oldSensor.state !== newSensor.state) {
         return true;
       }
     }
+
     return false;
   }
 
@@ -350,11 +384,13 @@ export class TRVZBSchedulerCard extends LitElement {
     this._pendingSaveId = saveId;
 
     // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
-    this._pendingSaveTimeoutId = setTimeout(() => {
-      if (this._pendingSaveId === saveId) {
+    // Store timeout ID first, then verify both saveId and timeoutId match to prevent race conditions
+    const timeoutId = setTimeout(() => {
+      if (this._pendingSaveId === saveId && this._pendingSaveTimeoutId === timeoutId) {
         this._clearPendingSave();
       }
     }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);
+    this._pendingSaveTimeoutId = timeoutId;
 
     try {
       await saveSchedule(this.hass, this.config.entity, this._schedule);
