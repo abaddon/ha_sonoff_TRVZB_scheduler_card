@@ -386,7 +386,14 @@ export class TRVZBSchedulerCard extends LitElement {
    * Save schedule to device - updated to use bulk update
    */
   private async _saveSchedule(): Promise<void> {
-    if (!this.hass || !this.config?.entity || !this._schedule || !this._originalSchedule || this._saving) {
+    if (!this.hass || !this.config?.entity || !this._schedule || this._saving) {
+      return;
+    }
+
+    // Explicit validation: originalSchedule must exist
+    if (!this._originalSchedule) {
+      this._error = 'Cannot save: no original schedule loaded. Please reload the card.';
+      console.error('Save attempted with null _originalSchedule');
       return;
     }
 
@@ -421,25 +428,29 @@ export class TRVZBSchedulerCard extends LitElement {
         this._schedule
       );
 
-      if (result.success) {
-        if (result.skipped) {
-          // No changes detected - just clear the flag
-          console.log('No schedule changes detected, skipping save');
-        } else {
-          console.log(`Updated ${result.daysUpdated.length} day(s):`, result.daysUpdated);
-        }
+      // Handle discriminated union result
+      if (result.status === 'success') {
+        console.log(`Updated ${result.daysUpdated.length} day(s):`, result.daysUpdated);
 
         // Update original to match current (reset diff baseline)
         this._originalSchedule = this._deepCopySchedule(this._schedule);
         this._hasUnsavedChanges = false;
         this._error = null;
+      } else if (result.status === 'skipped') {
+        // No changes detected - provide user feedback
+        console.log('No schedule changes detected, skipping save');
+        this._hasUnsavedChanges = false;
+        // Clear pending save since we didn't actually publish anything
+        this._clearPendingSave();
       } else {
-        throw new Error(result.error || 'Failed to save schedule');
+        // result.status === 'error'
+        throw new Error(result.error);
       }
     } catch (error) {
       this._error = error instanceof Error ? error.message : 'Failed to save schedule';
       console.error('Save schedule error:', error);
       // Clear pending on error so we can detect external changes again
+      // Must clear BEFORE updating _saving to false to prevent race condition
       this._clearPendingSave();
     } finally {
       this._saving = false;

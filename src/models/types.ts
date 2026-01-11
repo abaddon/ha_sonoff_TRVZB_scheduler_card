@@ -87,10 +87,9 @@ export interface ScheduleDiff {
 
 /**
  * Result of a save operation
+ * Uses discriminated union for type-safe handling of different outcomes
  */
-export interface SaveScheduleResult {
-  success: boolean;
-  daysUpdated: DayOfWeek[];
-  skipped: boolean;  // True if no changes were detected
-  error?: string;
-}
+export type SaveScheduleResult =
+  | { status: 'success'; daysUpdated: readonly DayOfWeek[] }
+  | { status: 'skipped' }
+  | { status: 'error'; error: string };

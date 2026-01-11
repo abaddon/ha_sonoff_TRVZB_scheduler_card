@@ -268,10 +268,14 @@ export function computeScheduleDiff(
     }
   }
 
+  // Create truly immutable changedDays array to satisfy readonly contract
+  const changedDaysArray = Array.from(changes.keys());
+  const immutableChangedDays = Object.freeze(changedDaysArray) as readonly DayOfWeek[];
+
   return {
     changes,
     hasChanges: changes.size > 0,
-    changedDays: Array.from(changes.keys())
+    changedDays: immutableChangedDays
   };
 }
 

@@ -204,11 +204,7 @@ export async function saveSchedule(
 
     // No changes detected - skip MQTT publish
     if (!diff.hasChanges) {
-      return {
-        success: true,
-        daysUpdated: [],
-        skipped: true
-      };
+      return { status: 'skipped' };
     }
 
     // Build the partial payload
@@ -216,6 +212,11 @@ export async function saveSchedule(
 
     // Extract device friendly name from entity_id
     const friendlyName = extractFriendlyName(entityId);
+
+    // Validate entity ID before using in MQTT topic (defense in depth)
+    if (!friendlyName || friendlyName.trim().length === 0) {
+      throw new Error('Invalid entity ID: cannot extract device name');
+    }
 
     // Publish single message to base set topic
     const topic = `zigbee2mqtt/${friendlyName}/set`;
@@ -226,16 +227,13 @@ export async function saveSchedule(
     });
 
     return {
-      success: true,
-      daysUpdated: diff.changedDays.slice(), // Copy array
-      skipped: false
+      status: 'success',
+      daysUpdated: Object.freeze([...diff.changedDays]) as readonly DayOfWeek[]
     };
   } catch (error) {
     console.error(`Error saving schedule for ${entityId}:`, error);
     return {
-      success: false,
-      daysUpdated: [],
-      skipped: false,
+      status: 'error',
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
