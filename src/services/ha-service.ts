@@ -34,6 +34,29 @@ export function isInvalidSensorState(state: string | null | undefined): boolean 
 }
 
 /**
+ * Validate that a schedule object has all required days with transitions arrays
+ * Used for early validation before computing diff or saving
+ *
+ * @param schedule - The schedule to validate
+ * @returns True if schedule has all 7 days with transitions arrays
+ */
+function validateScheduleStructure(schedule: WeeklySchedule): boolean {
+  if (!schedule || typeof schedule !== 'object') {
+    return false;
+  }
+
+  // Check that all 7 days are present with transitions arrays
+  for (const day of DAYS_OF_WEEK) {
+    const daySchedule = schedule[day];
+    if (!daySchedule || !Array.isArray(daySchedule.transitions)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Type guard to verify a partial schedule has all 7 days populated
  * Used to safely narrow Partial<MQTTWeeklySchedule> to MQTTWeeklySchedule
  */
@@ -199,6 +222,21 @@ export async function saveSchedule(
   modifiedSchedule: WeeklySchedule
 ): Promise<SaveScheduleResult> {
   try {
+    // Validate input schedules before computing diff
+    if (!validateScheduleStructure(originalSchedule)) {
+      return {
+        status: 'error',
+        error: 'Invalid original schedule: missing days or transitions array'
+      };
+    }
+
+    if (!validateScheduleStructure(modifiedSchedule)) {
+      return {
+        status: 'error',
+        error: 'Invalid modified schedule: missing days or transitions array'
+      };
+    }
+
     // Compute which days have changed
     const diff = computeScheduleDiff(originalSchedule, modifiedSchedule);
 

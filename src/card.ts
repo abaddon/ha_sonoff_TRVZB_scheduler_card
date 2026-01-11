@@ -67,7 +67,7 @@ export class TRVZBSchedulerCard extends LitElement {
 
   /**
    * Compute a simple hash of all day sensor states for efficient change detection
-   * Returns a string like "state1|state2|...|state7" or null if any sensor is missing
+   * Returns a JSON string array to prevent collision issues with special characters
    */
   private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string | null {
     const states: string[] = [];
@@ -77,7 +77,7 @@ export class TRVZBSchedulerCard extends LitElement {
       // Include 'undefined' marker for missing sensors to detect appearance/disappearance
       states.push(sensor ? sensor.state : '\0');
     }
-    return states.join('|');
+    return JSON.stringify(states);
   }
 
   /**
@@ -495,7 +495,7 @@ export class TRVZBSchedulerCard extends LitElement {
             <button
               class="button button-primary save-button ${this._saving ? 'loading' : ''}"
               @click=${this._saveSchedule}
-              ?disabled=${!this._hasUnsavedChanges || this._saving}
+              ?disabled=${!this._hasUnsavedChanges || this._saving || !this._originalSchedule}
             >
               ${this._saving ? 'Saving...' : 'Save'}
             </button>
