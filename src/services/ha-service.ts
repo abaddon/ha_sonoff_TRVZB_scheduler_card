@@ -267,7 +267,7 @@ export async function saveSchedule(
 
     return {
       status: 'success',
-      daysUpdated: Object.freeze([...diff.changedDays]) as readonly DayOfWeek[]
+      daysUpdated: diff.changedDays
     };
   } catch (error) {
     console.error(`Error saving schedule for ${entityId}:`, error);

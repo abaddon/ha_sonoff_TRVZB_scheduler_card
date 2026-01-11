@@ -268,14 +268,13 @@ export function computeScheduleDiff(
     }
   }
 
-  // Create truly immutable changedDays array to satisfy readonly contract
-  const changedDaysArray = Array.from(changes.keys());
-  const immutableChangedDays = Object.freeze(changedDaysArray) as readonly DayOfWeek[];
+  // TypeScript readonly is better than Object.freeze for immutability
+  const changedDays: readonly DayOfWeek[] = Array.from(changes.keys());
 
   return {
     changes,
     hasChanges: changes.size > 0,
-    changedDays: immutableChangedDays
+    changedDays
   };
 }
 

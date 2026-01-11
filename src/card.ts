@@ -59,7 +59,17 @@ export class TRVZBSchedulerCard extends LitElement {
   // Unique ID for current pending save operation (prevents race conditions on rapid saves)
   private _pendingSaveId: number = 0;
 
-  // Timeout duration for pending save expiry (30 seconds)
+  // Counter for generating unique save IDs (prevents collision on rapid saves)
+  private _saveIdCounter: number = 0;
+
+  /**
+   * Timeout duration for pending save expiry
+   * 30 seconds allows for:
+   * - Network latency to MQTT broker
+   * - Zigbee2MQTT processing time
+   * - Device response time
+   * - Sensor state propagation back to Home Assistant
+   */
   private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
 
   // Cached hash of sensor states for efficient change detection
@@ -173,15 +183,11 @@ export class TRVZBSchedulerCard extends LitElement {
    * Used to create immutable snapshots for change tracking
    */
   private _deepCopySchedule(schedule: WeeklySchedule): WeeklySchedule {
-    return {
-      sunday: { transitions: schedule.sunday.transitions.map(t => ({ ...t })) },
-      monday: { transitions: schedule.monday.transitions.map(t => ({ ...t })) },
-      tuesday: { transitions: schedule.tuesday.transitions.map(t => ({ ...t })) },
-      wednesday: { transitions: schedule.wednesday.transitions.map(t => ({ ...t })) },
-      thursday: { transitions: schedule.thursday.transitions.map(t => ({ ...t })) },
-      friday: { transitions: schedule.friday.transitions.map(t => ({ ...t })) },
-      saturday: { transitions: schedule.saturday.transitions.map(t => ({ ...t })) },
-    };
+    const copy: Partial<WeeklySchedule> = {};
+    for (const day of DAYS_OF_WEEK) {
+      copy[day] = { transitions: schedule[day].transitions.map(t => ({ ...t })) };
+    }
+    return copy as WeeklySchedule;
   }
 
   /**
@@ -402,7 +408,8 @@ export class TRVZBSchedulerCard extends LitElement {
 
     // ATOMIC OPERATION: Generate new saveId and clear old timeout together
     // This ensures no stale callback can match the new saveId
-    const saveId = Date.now();
+    // Using incrementing counter to prevent collision on rapid saves
+    const saveId = ++this._saveIdCounter;
 
     // Clear previous timeout FIRST (but don't reset saveId yet)
     if (this._pendingSaveTimeoutId !== null) {
