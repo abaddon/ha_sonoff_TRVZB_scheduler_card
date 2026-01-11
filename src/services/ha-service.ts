@@ -3,8 +3,9 @@
  * Handles reading/writing TRVZB schedules via Home Assistant and MQTT
  */
 
-import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek } from '../models/types';
-import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule } from '../models/schedule';
+import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek, SaveScheduleResult } from '../models/types';
+import { parseWeeklySchedule, createEmptyWeeklySchedule, computeScheduleDiff, buildPartialPayload } from '../models/schedule';
+import { sanitizeMqttTopicSegment } from './mqtt-sanitizer';
 
 /**
  * Invalid sensor states that indicate no valid data is available
@@ -31,6 +32,29 @@ export function isInvalidSensorState(state: string | null | undefined): boolean 
     return true;
   }
   return INVALID_SENSOR_STATES.has(state.toLowerCase());
+}
+
+/**
+ * Validate that a schedule object has all required days with transitions arrays
+ * Used for early validation before computing diff or saving
+ *
+ * @param schedule - The schedule to validate
+ * @returns True if schedule has all 7 days with transitions arrays
+ */
+function validateScheduleStructure(schedule: WeeklySchedule): boolean {
+  if (!schedule || typeof schedule !== 'object') {
+    return false;
+  }
+
+  // Check that all 7 days are present with transitions arrays
+  for (const day of DAYS_OF_WEEK) {
+    const daySchedule = schedule[day];
+    if (!daySchedule || !Array.isArray(daySchedule.transitions)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -183,41 +207,74 @@ export function getEntitySchedule(hass: HomeAssistant, entityId: string): Weekly
 }
 
 /**
- * Save a weekly schedule to the device via MQTT
+ * Save only modified days of a weekly schedule to the device via MQTT
+ * Publishes a single JSON message with only the changed days
  *
  * @param hass - Home Assistant instance
  * @param entityId - Climate entity ID
- * @param schedule - Weekly schedule to save
- * @throws Error if save fails
+ * @param originalSchedule - The schedule as it was before modifications
+ * @param modifiedSchedule - The schedule after user modifications
+ * @returns Result indicating which days were updated
  */
 export async function saveSchedule(
   hass: HomeAssistant,
   entityId: string,
-  schedule: WeeklySchedule
-): Promise<void> {
+  originalSchedule: WeeklySchedule,
+  modifiedSchedule: WeeklySchedule
+): Promise<SaveScheduleResult> {
   try {
+    // Validate input schedules before computing diff
+    if (!validateScheduleStructure(originalSchedule)) {
+      return {
+        status: 'error',
+        error: 'Invalid original schedule: missing days or transitions array'
+      };
+    }
+
+    if (!validateScheduleStructure(modifiedSchedule)) {
+      return {
+        status: 'error',
+        error: 'Invalid modified schedule: missing days or transitions array'
+      };
+    }
+
+    // Compute which days have changed
+    const diff = computeScheduleDiff(originalSchedule, modifiedSchedule);
+
+    // No changes detected - skip MQTT publish
+    if (!diff.hasChanges) {
+      return { status: 'skipped' };
+    }
+
+    // Build the partial payload
+    const payload = buildPartialPayload(diff);
+
     // Extract device friendly name from entity_id
     const friendlyName = extractFriendlyName(entityId);
 
-    // Serialize the schedule to MQTT format
-    const mqttSchedule = serializeWeeklySchedule(schedule);
+    // Validate entity ID before using in MQTT topic (defense in depth)
+    if (!friendlyName || friendlyName.trim().length === 0) {
+      throw new Error('Invalid entity ID: cannot extract device name');
+    }
 
-    // Construct the MQTT topic
+    // Publish single message to base set topic
     const topic = `zigbee2mqtt/${friendlyName}/set`;
 
-    // Prepare the payload
-    const payload = JSON.stringify({
-      weekly_schedule: mqttSchedule
-    });
-
-    // Call mqtt.publish service
     await hass.callService('mqtt', 'publish', {
       topic: topic,
-      payload: payload
+      payload: JSON.stringify(payload)
     });
+
+    return {
+      status: 'success',
+      daysUpdated: diff.changedDays
+    };
   } catch (error) {
     console.error(`Error saving schedule for ${entityId}:`, error);
-    throw new Error(`Failed to save schedule: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return {
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
 
@@ -264,19 +321,32 @@ export function getEntityInfo(hass: HomeAssistant, entityId: string): EntityInfo
  * Extract device friendly name from climate entity_id
  * Handles "climate.device_name" format
  *
+ * SECURITY: Sanitizes output to remove MQTT special characters
+ * that could cause topic injection (wildcards +, #, separators /)
+ *
  * @param entityId - Full entity ID (e.g., "climate.living_room_trvzb")
- * @returns Device friendly name (e.g., "living_room_trvzb")
+ * @returns Sanitized device friendly name (e.g., "living_room_trvzb")
  */
 export function extractFriendlyName(entityId: string): string {
   // Remove the domain prefix (e.g., "climate.")
   const parts = entityId.split('.');
-  if (parts.length < 2) {
-    // If no domain prefix, return as-is
-    return entityId;
+
+  // Extract the device name portion
+  const rawDeviceName = parts.length < 2
+    ? entityId
+    : parts.slice(1).join('.');
+
+  // Sanitize for MQTT safety (defense in depth)
+  const result = sanitizeMqttTopicSegment(rawDeviceName, 'unknown_device');
+
+  // Log warning if sanitization modified the input (helps debug misconfiguration)
+  if (result.wasModified) {
+    console.warn(
+      `MQTT safety: Sanitized device name from "${result.originalValue}" to "${result.value}"`
+    );
   }
 
-  // Return everything after the first dot
-  return parts.slice(1).join('.');
+  return result.value;
 }
 
 /**

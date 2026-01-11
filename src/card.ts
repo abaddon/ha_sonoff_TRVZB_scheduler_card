@@ -3,12 +3,12 @@
  * A Home Assistant custom card for managing Sonoff TRVZB thermostat schedules
  */
 
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, DAYS_OF_WEEK } from './models/types';
 import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists, isInvalidSensorState } from './services/ha-service';
 import { createEmptyWeeklySchedule, serializeWeeklySchedule } from './models/schedule';
-import { cardStyles, getTemperatureColor } from './styles/card-styles';
+import { cardStyles } from './styles/card-styles';
 
 // Import child components (they will be registered separately)
 import './components/schedule-week-view';
@@ -38,6 +38,7 @@ export class TRVZBSchedulerCard extends LitElement {
 
   // Internal state
   @state() private _schedule: WeeklySchedule | null = null;
+  @state() private _originalSchedule: WeeklySchedule | null = null;
   @state() private _viewMode: 'week' | 'graph' = 'week';
   @state() private _editingDay: DayOfWeek | null = null;
   @state() private _showCopyDialog: boolean = false;
@@ -58,7 +59,17 @@ export class TRVZBSchedulerCard extends LitElement {
   // Unique ID for current pending save operation (prevents race conditions on rapid saves)
   private _pendingSaveId: number = 0;
 
-  // Timeout duration for pending save expiry (30 seconds)
+  // Counter for generating unique save IDs (prevents collision on rapid saves)
+  private _saveIdCounter: number = 0;
+
+  /**
+   * Timeout duration for pending save expiry
+   * 30 seconds allows for:
+   * - Network latency to MQTT broker
+   * - Zigbee2MQTT processing time
+   * - Device response time
+   * - Sensor state propagation back to Home Assistant
+   */
   private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
 
   // Cached hash of sensor states for efficient change detection
@@ -66,7 +77,7 @@ export class TRVZBSchedulerCard extends LitElement {
 
   /**
    * Compute a simple hash of all day sensor states for efficient change detection
-   * Returns a string like "state1|state2|...|state7" or null if any sensor is missing
+   * Returns a JSON string array to prevent collision issues with special characters
    */
   private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string | null {
     const states: string[] = [];
@@ -76,7 +87,7 @@ export class TRVZBSchedulerCard extends LitElement {
       // Include 'undefined' marker for missing sensors to detect appearance/disappearance
       states.push(sensor ? sensor.state : '\0');
     }
-    return states.join('|');
+    return JSON.stringify(states);
   }
 
   /**
@@ -165,6 +176,18 @@ export class TRVZBSchedulerCard extends LitElement {
       }
     }
     return missing;
+  }
+
+  /**
+   * Create a deep copy of a weekly schedule
+   * Used to create immutable snapshots for change tracking
+   */
+  private _deepCopySchedule(schedule: WeeklySchedule): WeeklySchedule {
+    const copy: Partial<WeeklySchedule> = {};
+    for (const day of DAYS_OF_WEEK) {
+      copy[day] = { transitions: schedule[day].transitions.map(t => ({ ...t })) };
+    }
+    return copy as WeeklySchedule;
   }
 
   /**
@@ -276,10 +299,13 @@ export class TRVZBSchedulerCard extends LitElement {
 
     if (schedule) {
       this._schedule = schedule;
+      // Store immutable copy as reference point for change detection
+      this._originalSchedule = this._deepCopySchedule(schedule);
       this._hasUnsavedChanges = false;
     } else {
       // Sensors exist but have no valid schedule - use default
       this._schedule = createEmptyWeeklySchedule();
+      this._originalSchedule = this._deepCopySchedule(this._schedule);
       this._hasUnsavedChanges = true;
       this._error = 'No valid schedule found on sensors. Using default schedule.';
     }
@@ -363,43 +389,83 @@ export class TRVZBSchedulerCard extends LitElement {
   }
 
   /**
-   * Save schedule to device
+   * Save schedule to device - updated to use bulk update
    */
   private async _saveSchedule(): Promise<void> {
     if (!this.hass || !this.config?.entity || !this._schedule || this._saving) {
       return;
     }
 
+    // Explicit validation: originalSchedule must exist
+    if (!this._originalSchedule) {
+      this._error = 'Cannot save: no original schedule loaded. Please reload the card.';
+      console.error('Save attempted with null _originalSchedule');
+      return;
+    }
+
     this._saving = true;
     this._error = null;
 
-    // Clear any existing pending save timeout
-    this._clearPendingSave();
+    // ATOMIC OPERATION: Generate new saveId and clear old timeout together
+    // This ensures no stale callback can match the new saveId
+    // Using incrementing counter to prevent collision on rapid saves
+    const saveId = ++this._saveIdCounter;
+
+    // Clear previous timeout FIRST (but don't reset saveId yet)
+    if (this._pendingSaveTimeoutId !== null) {
+      clearTimeout(this._pendingSaveTimeoutId);
+      this._pendingSaveTimeoutId = null;
+    }
+
+    // NOW update the saveId - any old timeout callback checking the old saveId will fail
+    this._pendingSaveId = saveId;
 
     // Store the schedule in MQTT format to compare with sensor updates
     this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
 
-    // Generate unique ID for this save operation (prevents race conditions on rapid saves)
-    const saveId = Date.now();
-    this._pendingSaveId = saveId;
-
-    // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
-    // Store timeout ID first, then verify both saveId and timeoutId match to prevent race conditions
-    const timeoutId = setTimeout(() => {
-      if (this._pendingSaveId === saveId && this._pendingSaveTimeoutId === timeoutId) {
+    // Create timeout with closure over saveId
+    // Only check saveId - it's the unique identifier for this save operation
+    this._pendingSaveTimeoutId = setTimeout(() => {
+      // Check if this is still the current pending save
+      // If a new save started, _pendingSaveId will be different
+      if (this._pendingSaveId === saveId) {
+        console.warn(`Pending save timeout expired for saveId: ${saveId}`);
         this._clearPendingSave();
       }
     }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);
-    this._pendingSaveTimeoutId = timeoutId;
 
     try {
-      await saveSchedule(this.hass, this.config.entity, this._schedule);
-      this._hasUnsavedChanges = false;
-      this._error = null;
+      // Call updated saveSchedule with original reference
+      const result = await saveSchedule(
+        this.hass,
+        this.config.entity,
+        this._originalSchedule,
+        this._schedule
+      );
+
+      // Handle discriminated union result
+      if (result.status === 'success') {
+        console.log(`Updated ${result.daysUpdated.length} day(s):`, result.daysUpdated);
+
+        // Update original to match current (reset diff baseline)
+        this._originalSchedule = this._deepCopySchedule(this._schedule);
+        this._hasUnsavedChanges = false;
+        this._error = null;
+      } else if (result.status === 'skipped') {
+        // No changes detected - provide user feedback
+        console.log('No schedule changes detected, skipping save');
+        this._hasUnsavedChanges = false;
+        // Clear pending save since we didn't actually publish anything
+        this._clearPendingSave();
+      } else {
+        // result.status === 'error'
+        throw new Error(result.error);
+      }
     } catch (error) {
       this._error = error instanceof Error ? error.message : 'Failed to save schedule';
       console.error('Save schedule error:', error);
       // Clear pending on error so we can detect external changes again
+      // Must clear BEFORE updating _saving to false to prevent race condition
       this._clearPendingSave();
     } finally {
       this._saving = false;
@@ -444,7 +510,7 @@ export class TRVZBSchedulerCard extends LitElement {
             <button
               class="button button-primary save-button ${this._saving ? 'loading' : ''}"
               @click=${this._saveSchedule}
-              ?disabled=${!this._hasUnsavedChanges || this._saving}
+              ?disabled=${!this._hasUnsavedChanges || this._saving || !this._originalSchedule}
             >
               ${this._saving ? 'Saving...' : 'Save'}
             </button>

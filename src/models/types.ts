@@ -66,3 +66,30 @@ export interface MQTTWeeklySchedule {
   friday: string;
   saturday: string;
 }
+
+/**
+ * Partial MQTT payload for bulk updates
+ * Contains only the days that need to be updated
+ */
+export type MQTTPartialPayload = Partial<Record<`weekly_schedule_${DayOfWeek}`, string>>;
+
+/**
+ * Result of computing schedule differences
+ */
+export interface ScheduleDiff {
+  /** Map of day -> serialized schedule string for changed days only */
+  readonly changes: Map<DayOfWeek, string>;
+  /** True if at least one day has changed */
+  readonly hasChanges: boolean;
+  /** List of days that changed */
+  readonly changedDays: readonly DayOfWeek[];
+}
+
+/**
+ * Result of a save operation
+ * Uses discriminated union for type-safe handling of different outcomes
+ */
+export type SaveScheduleResult =
+  | { status: 'success'; daysUpdated: readonly DayOfWeek[] }
+  | { status: 'skipped' }
+  | { status: 'error'; error: string };

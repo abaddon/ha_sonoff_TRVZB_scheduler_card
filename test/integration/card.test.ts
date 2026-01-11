@@ -793,11 +793,14 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
       await waitForUpdate(card);
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      const lastCall = scenario.recorder.getLastCall();
-      expect(lastCall?.domain).toBe('mqtt');
-      expect(lastCall?.service).toBe('publish');
-      expect(lastCall?.data.topic).toContain('zigbee2mqtt');
-      expect(lastCall?.data.topic).toContain('/set');
+      // Bulk update: single MQTT call to base /set topic
+      const calls = scenario.recorder.getCalls('mqtt', 'publish');
+      expect(calls.length).toBe(1);
+
+      // Verify topic is base /set (not per-day topics)
+      expect(calls[0].domain).toBe('mqtt');
+      expect(calls[0].service).toBe('publish');
+      expect(calls[0].data.topic).toBe('zigbee2mqtt/living_room_trvzb/set');
     });
 
     it('should pass weekly_schedule in payload', async () => {
@@ -819,11 +822,22 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
       await waitForUpdate(card);
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      const lastCall = scenario.recorder.getLastCall();
-      const payload = JSON.parse(lastCall?.data.payload as string);
-      expect(payload).toHaveProperty('weekly_schedule');
-      expect(payload.weekly_schedule).toHaveProperty('monday');
-      expect(payload.weekly_schedule).toHaveProperty('sunday');
+      // Bulk update: single JSON payload with only changed days
+      const calls = scenario.recorder.getCalls('mqtt', 'publish');
+      expect(calls.length).toBe(1);
+
+      // Verify topic is base /set
+      expect(calls[0].data.topic).toBe('zigbee2mqtt/living_room_trvzb/set');
+
+      // Payload should be JSON string containing only Monday (the changed day)
+      const payload = JSON.parse(calls[0].data.payload as string);
+      expect(payload).toHaveProperty('weekly_schedule_monday');
+      expect(typeof payload.weekly_schedule_monday).toBe('string');
+      expect(payload.weekly_schedule_monday).toContain('00:00/');
+
+      // Should not contain other days (they didn't change)
+      expect(payload).not.toHaveProperty('weekly_schedule_tuesday');
+      expect(payload).not.toHaveProperty('weekly_schedule_sunday');
     });
 
     it('should show loading state during save', async () => {
@@ -901,7 +915,10 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
 
       const errorMessage = queryShadow(card, '.message-error');
       expect(errorMessage).toBeTruthy();
-      expect(errorMessage?.textContent).toContain('Failed to save');
+      // Error can be either "Failed to save schedule" or the underlying error message
+      const errorText = errorMessage?.textContent || '';
+      expect(errorText.length).toBeGreaterThan(0);
+      expect(errorText).toMatch(/(Failed to save|Network error)/);
     });
 
     it('should disable save button when already saving', async () => {
@@ -976,6 +993,78 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
 
       // No unsaved changes means save button should be disabled
       expect((card as any)._hasUnsavedChanges).toBe(false);
+    });
+
+    it('should include multiple changed days in single payload', async () => {
+      // Change Monday
+      const weekView = queryShadow(card, 'schedule-week-view');
+      dispatchCustomEvent(weekView!, 'day-selected', { day: 'monday' as DayOfWeek });
+      await waitForUpdate(card);
+
+      const dayEditor = queryShadow(card, 'day-schedule-editor');
+      dispatchCustomEvent(dayEditor!, 'schedule-changed', {
+        day: 'monday' as DayOfWeek,
+        schedule: { transitions: [{ time: '00:00', temperature: 25 }] }
+      });
+      await waitForUpdate(card);
+
+      // Change Friday
+      dispatchCustomEvent(weekView!, 'day-selected', { day: 'friday' as DayOfWeek });
+      await waitForUpdate(card);
+
+      const dayEditor2 = queryShadow(card, 'day-schedule-editor');
+      dispatchCustomEvent(dayEditor2!, 'schedule-changed', {
+        day: 'friday' as DayOfWeek,
+        schedule: { transitions: [{ time: '00:00', temperature: 22 }] }
+      });
+      await waitForUpdate(card);
+
+      // Save
+      const saveButton = queryShadow<HTMLButtonElement>(card, '.save-button');
+      saveButton!.click();
+      await waitForUpdate(card);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const calls = scenario.recorder.getCalls('mqtt', 'publish');
+      expect(calls.length).toBe(1);
+
+      const payload = JSON.parse(calls[0].data.payload as string);
+      expect(Object.keys(payload).length).toBe(2);
+      expect(payload).toHaveProperty('weekly_schedule_monday');
+      expect(payload).toHaveProperty('weekly_schedule_friday');
+      expect(payload.weekly_schedule_monday).toBe('00:00/25');
+      expect(payload.weekly_schedule_friday).toBe('00:00/22');
+    });
+
+    it('should update _originalSchedule after successful save', async () => {
+      const originalBefore = (card as any)._originalSchedule;
+
+      // Make a change
+      const weekView = queryShadow(card, 'schedule-week-view');
+      dispatchCustomEvent(weekView!, 'day-selected', { day: 'tuesday' as DayOfWeek });
+      await waitForUpdate(card);
+
+      const dayEditor = queryShadow(card, 'day-schedule-editor');
+      dispatchCustomEvent(dayEditor!, 'schedule-changed', {
+        day: 'tuesday' as DayOfWeek,
+        schedule: { transitions: [{ time: '00:00', temperature: 30 }] }
+      });
+      await waitForUpdate(card);
+
+      // Save
+      const saveButton = queryShadow<HTMLButtonElement>(card, '.save-button');
+      saveButton!.click();
+      await waitForUpdate(card);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // _originalSchedule should now match _schedule
+      const originalAfter = (card as any)._originalSchedule;
+      const currentSchedule = (card as any)._schedule;
+
+      expect(originalAfter).toBeDefined();
+      expect(originalAfter).not.toBe(originalBefore);
+      expect(originalAfter.tuesday.transitions[0].temperature).toBe(30);
+      expect(currentSchedule.tuesday.transitions[0].temperature).toBe(30);
     });
   });
 
