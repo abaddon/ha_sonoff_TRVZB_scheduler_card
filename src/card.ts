@@ -3,12 +3,12 @@
  * A Home Assistant custom card for managing Sonoff TRVZB thermostat schedules
  */
 
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, DAYS_OF_WEEK } from './models/types';
 import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists, isInvalidSensorState } from './services/ha-service';
 import { createEmptyWeeklySchedule, serializeWeeklySchedule } from './models/schedule';
-import { cardStyles, getTemperatureColor } from './styles/card-styles';
+import { cardStyles } from './styles/card-styles';
 
 // Import child components (they will be registered separately)
 import './components/schedule-week-view';
@@ -38,6 +38,7 @@ export class TRVZBSchedulerCard extends LitElement {
 
   // Internal state
   @state() private _schedule: WeeklySchedule | null = null;
+  @state() private _originalSchedule: WeeklySchedule | null = null;
   @state() private _viewMode: 'week' | 'graph' = 'week';
   @state() private _editingDay: DayOfWeek | null = null;
   @state() private _showCopyDialog: boolean = false;
@@ -168,6 +169,22 @@ export class TRVZBSchedulerCard extends LitElement {
   }
 
   /**
+   * Create a deep copy of a weekly schedule
+   * Used to create immutable snapshots for change tracking
+   */
+  private _deepCopySchedule(schedule: WeeklySchedule): WeeklySchedule {
+    return {
+      sunday: { transitions: schedule.sunday.transitions.map(t => ({ ...t })) },
+      monday: { transitions: schedule.monday.transitions.map(t => ({ ...t })) },
+      tuesday: { transitions: schedule.tuesday.transitions.map(t => ({ ...t })) },
+      wednesday: { transitions: schedule.wednesday.transitions.map(t => ({ ...t })) },
+      thursday: { transitions: schedule.thursday.transitions.map(t => ({ ...t })) },
+      friday: { transitions: schedule.friday.transitions.map(t => ({ ...t })) },
+      saturday: { transitions: schedule.saturday.transitions.map(t => ({ ...t })) },
+    };
+  }
+
+  /**
    * Set card configuration
    * Called by Home Assistant when the card is configured
    */
@@ -276,10 +293,13 @@ export class TRVZBSchedulerCard extends LitElement {
 
     if (schedule) {
       this._schedule = schedule;
+      // Store immutable copy as reference point for change detection
+      this._originalSchedule = this._deepCopySchedule(schedule);
       this._hasUnsavedChanges = false;
     } else {
       // Sensors exist but have no valid schedule - use default
       this._schedule = createEmptyWeeklySchedule();
+      this._originalSchedule = this._deepCopySchedule(this._schedule);
       this._hasUnsavedChanges = true;
       this._error = 'No valid schedule found on sensors. Using default schedule.';
     }
@@ -363,10 +383,10 @@ export class TRVZBSchedulerCard extends LitElement {
   }
 
   /**
-   * Save schedule to device
+   * Save schedule to device - updated to use bulk update
    */
   private async _saveSchedule(): Promise<void> {
-    if (!this.hass || !this.config?.entity || !this._schedule || this._saving) {
+    if (!this.hass || !this.config?.entity || !this._schedule || !this._originalSchedule || this._saving) {
       return;
     }
 
@@ -393,9 +413,29 @@ export class TRVZBSchedulerCard extends LitElement {
     this._pendingSaveTimeoutId = timeoutId;
 
     try {
-      await saveSchedule(this.hass, this.config.entity, this._schedule);
-      this._hasUnsavedChanges = false;
-      this._error = null;
+      // Call updated saveSchedule with original reference
+      const result = await saveSchedule(
+        this.hass,
+        this.config.entity,
+        this._originalSchedule,
+        this._schedule
+      );
+
+      if (result.success) {
+        if (result.skipped) {
+          // No changes detected - just clear the flag
+          console.log('No schedule changes detected, skipping save');
+        } else {
+          console.log(`Updated ${result.daysUpdated.length} day(s):`, result.daysUpdated);
+        }
+
+        // Update original to match current (reset diff baseline)
+        this._originalSchedule = this._deepCopySchedule(this._schedule);
+        this._hasUnsavedChanges = false;
+        this._error = null;
+      } else {
+        throw new Error(result.error || 'Failed to save schedule');
+      }
     } catch (error) {
       this._error = error instanceof Error ? error.message : 'Failed to save schedule';
       console.error('Save schedule error:', error);

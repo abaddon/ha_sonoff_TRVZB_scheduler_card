@@ -78,15 +78,24 @@ const mondaySchedule = hass.states['text.living_room_trvzb_weekly_schedule_monda
 ```
 
 ### Writing Schedule
-Each day is published to its own topic:
+A single bulk update message is published containing only the days that changed:
 ```javascript
-// For each day, publish to: zigbee2mqtt/DEVICE_NAME/set/weekly_schedule_{day}
+// Bulk update: single JSON message to base /set topic with only changed days
 hass.callService('mqtt', 'publish', {
-  topic: 'zigbee2mqtt/DEVICE_NAME/set/weekly_schedule_monday',
-  payload: '00:00/18 06:00/21 08:00/19 17:00/22 22:00/18'
+  topic: 'zigbee2mqtt/DEVICE_NAME/set',
+  payload: JSON.stringify({
+    weekly_schedule_monday: '00:00/18 06:00/21 08:00/19 17:00/22 22:00/18',
+    weekly_schedule_friday: '00:00/20 08:00/22 17:00/18'
+    // Only days that changed are included
+  })
 });
-// Repeat for each day of the week
 ```
+
+**Benefits of bulk update:**
+- Reduces MQTT traffic (1 message instead of 7)
+- Only sends changed days (more efficient)
+- Atomic update (all changes applied together)
+- Change tracking prevents unnecessary updates when no modifications exist
 
 ## Usage
 

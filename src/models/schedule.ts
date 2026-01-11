@@ -3,7 +3,7 @@
  * Handles conversion between MQTT format and internal representation
  */
 
-import { DaySchedule, Transition, WeeklySchedule, MQTTWeeklySchedule, DayOfWeek } from './types';
+import { DaySchedule, Transition, WeeklySchedule, MQTTWeeklySchedule, DayOfWeek, DAYS_OF_WEEK, ScheduleDiff, MQTTPartialPayload } from './types';
 import { compareTime } from '../utils/time';
 
 /**
@@ -239,4 +239,55 @@ export function removeDuplicateTransitions(transitions: Transition[]): Transitio
   }
 
   return result;
+}
+
+/**
+ * Compute the difference between two weekly schedules
+ * Returns only the days that have changed
+ *
+ * Comparison uses serialized form (MQTT string) to handle equivalent representations,
+ * so transitions in different order or with different IDs but same time/temp values
+ * will be considered equal after sorting and serialization.
+ *
+ * @param original - The original/reference schedule
+ * @param modified - The modified schedule to compare
+ * @returns ScheduleDiff with only changed days
+ */
+export function computeScheduleDiff(
+  original: WeeklySchedule,
+  modified: WeeklySchedule
+): ScheduleDiff {
+  const changes = new Map<DayOfWeek, string>();
+
+  for (const day of DAYS_OF_WEEK) {
+    const originalSerialized = serializeDaySchedule(original[day]);
+    const modifiedSerialized = serializeDaySchedule(modified[day]);
+
+    if (originalSerialized !== modifiedSerialized) {
+      changes.set(day, modifiedSerialized);
+    }
+  }
+
+  return {
+    changes,
+    hasChanges: changes.size > 0,
+    changedDays: Array.from(changes.keys())
+  };
+}
+
+/**
+ * Build the MQTT partial payload from a schedule diff
+ * Creates an object with weekly_schedule_{day} keys for changed days only
+ *
+ * @param diff - The computed schedule differences
+ * @returns Object with weekly_schedule_{day} keys for changed days only
+ */
+export function buildPartialPayload(diff: ScheduleDiff): MQTTPartialPayload {
+  const payload: MQTTPartialPayload = {};
+
+  for (const [day, serialized] of diff.changes) {
+    payload[`weekly_schedule_${day}`] = serialized;
+  }
+
+  return payload;
 }

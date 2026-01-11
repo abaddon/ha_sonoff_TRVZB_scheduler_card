@@ -3,8 +3,8 @@
  * Handles reading/writing TRVZB schedules via Home Assistant and MQTT
  */
 
-import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek } from '../models/types';
-import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule } from '../models/schedule';
+import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek, SaveScheduleResult } from '../models/types';
+import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule, computeScheduleDiff, buildPartialPayload } from '../models/schedule';
 
 /**
  * Invalid sensor states that indicate no valid data is available
@@ -183,40 +183,61 @@ export function getEntitySchedule(hass: HomeAssistant, entityId: string): Weekly
 }
 
 /**
- * Save a weekly schedule to the device via MQTT
- * Each day is published to its own topic: zigbee2mqtt/{device}/set/weekly_schedule_{day}
+ * Save only modified days of a weekly schedule to the device via MQTT
+ * Publishes a single JSON message with only the changed days
  *
  * @param hass - Home Assistant instance
  * @param entityId - Climate entity ID
- * @param schedule - Weekly schedule to save
- * @throws Error if save fails
+ * @param originalSchedule - The schedule as it was before modifications
+ * @param modifiedSchedule - The schedule after user modifications
+ * @returns Result indicating which days were updated
  */
 export async function saveSchedule(
   hass: HomeAssistant,
   entityId: string,
-  schedule: WeeklySchedule
-): Promise<void> {
+  originalSchedule: WeeklySchedule,
+  modifiedSchedule: WeeklySchedule
+): Promise<SaveScheduleResult> {
   try {
+    // Compute which days have changed
+    const diff = computeScheduleDiff(originalSchedule, modifiedSchedule);
+
+    // No changes detected - skip MQTT publish
+    if (!diff.hasChanges) {
+      return {
+        success: true,
+        daysUpdated: [],
+        skipped: true
+      };
+    }
+
+    // Build the partial payload
+    const payload = buildPartialPayload(diff);
+
     // Extract device friendly name from entity_id
     const friendlyName = extractFriendlyName(entityId);
 
-    // Serialize the schedule to MQTT format
-    const mqttSchedule = serializeWeeklySchedule(schedule);
+    // Publish single message to base set topic
+    const topic = `zigbee2mqtt/${friendlyName}/set`;
 
-    // Publish each day to its own topic
-    // Format: zigbee2mqtt/{device}/set/weekly_schedule_{day}
-    for (const day of DAYS_OF_WEEK) {
-      const topic = `zigbee2mqtt/${friendlyName}/set/weekly_schedule_${day}`;
-      const payload = mqttSchedule[day];
+    await hass.callService('mqtt', 'publish', {
+      topic: topic,
+      payload: JSON.stringify(payload)
+    });
 
-      await hass.callService('mqtt', 'publish', {
-        topic: topic,
-        payload: payload
-      });
-    }
+    return {
+      success: true,
+      daysUpdated: diff.changedDays.slice(), // Copy array
+      skipped: false
+    };
   } catch (error) {
     console.error(`Error saving schedule for ${entityId}:`, error);
-    throw new Error(`Failed to save schedule: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return {
+      success: false,
+      daysUpdated: [],
+      skipped: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
 

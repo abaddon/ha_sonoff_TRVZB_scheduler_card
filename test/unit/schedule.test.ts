@@ -14,9 +14,11 @@ import {
   ensureMidnightTransition,
   sortTransitions,
   copyDaySchedule,
-  removeDuplicateTransitions
+  removeDuplicateTransitions,
+  computeScheduleDiff,
+  buildPartialPayload
 } from '../../src/models/schedule';
-import { DaySchedule, MQTTWeeklySchedule, Transition } from '../../src/models/types';
+import { DaySchedule, MQTTWeeklySchedule, Transition, DayOfWeek } from '../../src/models/types';
 
 describe('schedule.ts', () => {
   describe('parseDaySchedule', () => {
@@ -663,6 +665,239 @@ describe('schedule.ts', () => {
       const result = serializeDaySchedule(schedule);
 
       expect(result).toBe('00:00/20.5 06:00/22.5');
+    });
+  });
+
+  describe('computeScheduleDiff', () => {
+    it('should return empty diff when schedules are identical', () => {
+      const schedule = createEmptyWeeklySchedule();
+      const diff = computeScheduleDiff(schedule, schedule);
+
+      expect(diff.hasChanges).toBe(false);
+      expect(diff.changedDays).toHaveLength(0);
+      expect(diff.changes.size).toBe(0);
+    });
+
+    it('should detect single day change', () => {
+      const original = createEmptyWeeklySchedule();
+      const modified = { ...createEmptyWeeklySchedule() };
+      modified.monday = { transitions: [{ time: '00:00', temperature: 25 }] };
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changedDays).toEqual(['monday']);
+      expect(diff.changes.get('monday')).toBe('00:00/25');
+    });
+
+    it('should detect multiple day changes', () => {
+      const original = createEmptyWeeklySchedule();
+      const modified = { ...createEmptyWeeklySchedule() };
+      modified.monday = { transitions: [{ time: '00:00', temperature: 25 }] };
+      modified.friday = { transitions: [{ time: '00:00', temperature: 22 }] };
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changedDays).toHaveLength(2);
+      expect(diff.changedDays).toContain('monday');
+      expect(diff.changedDays).toContain('friday');
+      expect(diff.changes.get('monday')).toBe('00:00/25');
+      expect(diff.changes.get('friday')).toBe('00:00/22');
+    });
+
+    it('should ignore order differences in transitions', () => {
+      // Same transitions in different order should not be detected as change
+      const original = createEmptyWeeklySchedule();
+      original.monday = {
+        transitions: [
+          { time: '00:00', temperature: 20 },
+          { time: '08:00', temperature: 22 }
+        ]
+      };
+
+      const modified = createEmptyWeeklySchedule();
+      modified.monday = {
+        transitions: [
+          { time: '08:00', temperature: 22 },
+          { time: '00:00', temperature: 20 }
+        ]
+      };
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(false);
+      expect(diff.changedDays).toHaveLength(0);
+    });
+
+    it('should detect all days changed when comparing different schedules', () => {
+      const original = createEmptyWeeklySchedule();
+      const modified = createEmptyWeeklySchedule();
+
+      // Change every day to different temperature
+      modified.sunday.transitions[0].temperature = 18;
+      modified.monday.transitions[0].temperature = 19;
+      modified.tuesday.transitions[0].temperature = 21;
+      modified.wednesday.transitions[0].temperature = 22;
+      modified.thursday.transitions[0].temperature = 23;
+      modified.friday.transitions[0].temperature = 24;
+      modified.saturday.transitions[0].temperature = 25;
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changedDays).toHaveLength(7);
+      expect(diff.changedDays).toContain('sunday');
+      expect(diff.changedDays).toContain('monday');
+      expect(diff.changedDays).toContain('saturday');
+    });
+
+    it('should use serialized comparison to handle equivalent representations', () => {
+      const original = createEmptyWeeklySchedule();
+      original.monday = {
+        transitions: [
+          { time: '00:00', temperature: 20.0 }
+        ]
+      };
+
+      const modified = createEmptyWeeklySchedule();
+      modified.monday = {
+        transitions: [
+          { time: '00:00', temperature: 20 }
+        ]
+      };
+
+      const diff = computeScheduleDiff(original, modified);
+
+      // 20.0 and 20 should serialize to same string "00:00/20"
+      expect(diff.hasChanges).toBe(false);
+    });
+
+    it('should detect change when transition added', () => {
+      const original = createEmptyWeeklySchedule();
+      const modified = createEmptyWeeklySchedule();
+      modified.wednesday = {
+        transitions: [
+          { time: '00:00', temperature: 20 },
+          { time: '08:00', temperature: 22 },
+          { time: '17:00', temperature: 18 }
+        ]
+      };
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changedDays).toEqual(['wednesday']);
+      expect(diff.changes.get('wednesday')).toBe('00:00/20 08:00/22 17:00/18');
+    });
+
+    it('should detect change when transition removed', () => {
+      const original = createEmptyWeeklySchedule();
+      original.thursday = {
+        transitions: [
+          { time: '00:00', temperature: 20 },
+          { time: '08:00', temperature: 22 }
+        ]
+      };
+
+      const modified = createEmptyWeeklySchedule();
+      // Uses default single 00:00/20 transition
+
+      const diff = computeScheduleDiff(original, modified);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changedDays).toEqual(['thursday']);
+    });
+  });
+
+  describe('buildPartialPayload', () => {
+    it('should build payload with weekly_schedule_ prefix', () => {
+      const changes = new Map<DayOfWeek, string>();
+      changes.set('monday', '00:00/20 08:00/22');
+
+      const diff = {
+        changes,
+        hasChanges: true,
+        changedDays: ['monday' as DayOfWeek]
+      };
+
+      const payload = buildPartialPayload(diff);
+
+      expect(payload).toEqual({
+        weekly_schedule_monday: '00:00/20 08:00/22'
+      });
+    });
+
+    it('should build payload with multiple days', () => {
+      const changes = new Map<DayOfWeek, string>();
+      changes.set('monday', '00:00/20');
+      changes.set('wednesday', '00:00/22 12:00/18');
+
+      const diff = {
+        changes,
+        hasChanges: true,
+        changedDays: ['monday' as DayOfWeek, 'wednesday' as DayOfWeek]
+      };
+
+      const payload = buildPartialPayload(diff);
+
+      expect(payload).toEqual({
+        weekly_schedule_monday: '00:00/20',
+        weekly_schedule_wednesday: '00:00/22 12:00/18'
+      });
+    });
+
+    it('should return empty object for no changes', () => {
+      const diff = {
+        changes: new Map(),
+        hasChanges: false,
+        changedDays: []
+      };
+
+      const payload = buildPartialPayload(diff);
+
+      expect(payload).toEqual({});
+    });
+
+    it('should handle all 7 days in payload', () => {
+      const changes = new Map<DayOfWeek, string>();
+      changes.set('sunday', '00:00/18');
+      changes.set('monday', '00:00/19');
+      changes.set('tuesday', '00:00/20');
+      changes.set('wednesday', '00:00/21');
+      changes.set('thursday', '00:00/22');
+      changes.set('friday', '00:00/23');
+      changes.set('saturday', '00:00/24');
+
+      const diff = {
+        changes,
+        hasChanges: true,
+        changedDays: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as DayOfWeek[]
+      };
+
+      const payload = buildPartialPayload(diff);
+
+      expect(Object.keys(payload)).toHaveLength(7);
+      expect(payload.weekly_schedule_sunday).toBe('00:00/18');
+      expect(payload.weekly_schedule_monday).toBe('00:00/19');
+      expect(payload.weekly_schedule_saturday).toBe('00:00/24');
+    });
+
+    it('should preserve complex schedule strings in payload', () => {
+      const changes = new Map<DayOfWeek, string>();
+      changes.set('friday', '00:00/18 06:00/21 08:00/19 17:00/22 22:00/18');
+
+      const diff = {
+        changes,
+        hasChanges: true,
+        changedDays: ['friday' as DayOfWeek]
+      };
+
+      const payload = buildPartialPayload(diff);
+
+      expect(payload).toEqual({
+        weekly_schedule_friday: '00:00/18 06:00/21 08:00/19 17:00/22 22:00/18'
+      });
     });
   });
 });
