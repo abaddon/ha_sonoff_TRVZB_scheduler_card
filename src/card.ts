@@ -400,24 +400,32 @@ export class TRVZBSchedulerCard extends LitElement {
     this._saving = true;
     this._error = null;
 
-    // Clear any existing pending save timeout
-    this._clearPendingSave();
+    // ATOMIC OPERATION: Generate new saveId and clear old timeout together
+    // This ensures no stale callback can match the new saveId
+    const saveId = Date.now();
+
+    // Clear previous timeout FIRST (but don't reset saveId yet)
+    if (this._pendingSaveTimeoutId !== null) {
+      clearTimeout(this._pendingSaveTimeoutId);
+      this._pendingSaveTimeoutId = null;
+    }
+
+    // NOW update the saveId - any old timeout callback checking the old saveId will fail
+    this._pendingSaveId = saveId;
 
     // Store the schedule in MQTT format to compare with sensor updates
     this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
 
-    // Generate unique ID for this save operation (prevents race conditions on rapid saves)
-    const saveId = Date.now();
-    this._pendingSaveId = saveId;
-
-    // Set timeout to clear pending save if sensors never update (e.g., Z2M bug)
-    // Store timeout ID first, then verify both saveId and timeoutId match to prevent race conditions
-    const timeoutId = setTimeout(() => {
-      if (this._pendingSaveId === saveId && this._pendingSaveTimeoutId === timeoutId) {
+    // Create timeout with closure over saveId
+    // Only check saveId - it's the unique identifier for this save operation
+    this._pendingSaveTimeoutId = setTimeout(() => {
+      // Check if this is still the current pending save
+      // If a new save started, _pendingSaveId will be different
+      if (this._pendingSaveId === saveId) {
+        console.warn(`Pending save timeout expired for saveId: ${saveId}`);
         this._clearPendingSave();
       }
     }, TRVZBSchedulerCard.PENDING_SAVE_TIMEOUT_MS);
-    this._pendingSaveTimeoutId = timeoutId;
 
     try {
       // Call updated saveSchedule with original reference

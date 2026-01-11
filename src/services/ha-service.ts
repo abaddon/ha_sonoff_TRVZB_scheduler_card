@@ -4,7 +4,8 @@
  */
 
 import { HomeAssistant, WeeklySchedule, MQTTWeeklySchedule, DAYS_OF_WEEK, DayOfWeek, SaveScheduleResult } from '../models/types';
-import { parseWeeklySchedule, serializeWeeklySchedule, createEmptyWeeklySchedule, computeScheduleDiff, buildPartialPayload } from '../models/schedule';
+import { parseWeeklySchedule, createEmptyWeeklySchedule, computeScheduleDiff, buildPartialPayload } from '../models/schedule';
+import { sanitizeMqttTopicSegment } from './mqtt-sanitizer';
 
 /**
  * Invalid sensor states that indicate no valid data is available
@@ -320,19 +321,32 @@ export function getEntityInfo(hass: HomeAssistant, entityId: string): EntityInfo
  * Extract device friendly name from climate entity_id
  * Handles "climate.device_name" format
  *
+ * SECURITY: Sanitizes output to remove MQTT special characters
+ * that could cause topic injection (wildcards +, #, separators /)
+ *
  * @param entityId - Full entity ID (e.g., "climate.living_room_trvzb")
- * @returns Device friendly name (e.g., "living_room_trvzb")
+ * @returns Sanitized device friendly name (e.g., "living_room_trvzb")
  */
 export function extractFriendlyName(entityId: string): string {
   // Remove the domain prefix (e.g., "climate.")
   const parts = entityId.split('.');
-  if (parts.length < 2) {
-    // If no domain prefix, return as-is
-    return entityId;
+
+  // Extract the device name portion
+  const rawDeviceName = parts.length < 2
+    ? entityId
+    : parts.slice(1).join('.');
+
+  // Sanitize for MQTT safety (defense in depth)
+  const result = sanitizeMqttTopicSegment(rawDeviceName, 'unknown_device');
+
+  // Log warning if sanitization modified the input (helps debug misconfiguration)
+  if (result.wasModified) {
+    console.warn(
+      `MQTT safety: Sanitized device name from "${result.originalValue}" to "${result.value}"`
+    );
   }
 
-  // Return everything after the first dot
-  return parts.slice(1).join('.');
+  return result.value;
 }
 
 /**
