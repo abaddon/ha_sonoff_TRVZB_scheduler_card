@@ -111,15 +111,11 @@ export function serializeDaySchedule(schedule: DaySchedule): string {
  * @returns Parsed weekly schedule
  */
 export function parseWeeklySchedule(mqtt: MQTTWeeklySchedule): WeeklySchedule {
-  return {
-    sunday: parseDaySchedule(mqtt.sunday || ''),
-    monday: parseDaySchedule(mqtt.monday || ''),
-    tuesday: parseDaySchedule(mqtt.tuesday || ''),
-    wednesday: parseDaySchedule(mqtt.wednesday || ''),
-    thursday: parseDaySchedule(mqtt.thursday || ''),
-    friday: parseDaySchedule(mqtt.friday || ''),
-    saturday: parseDaySchedule(mqtt.saturday || '')
-  };
+  const schedule = {} as WeeklySchedule;
+  for (const day of DAYS_OF_WEEK) {
+    schedule[day] = parseDaySchedule(mqtt[day] || '');
+  }
+  return schedule;
 }
 
 /**
@@ -129,15 +125,11 @@ export function parseWeeklySchedule(mqtt: MQTTWeeklySchedule): WeeklySchedule {
  * @returns MQTT-compatible weekly schedule object
  */
 export function serializeWeeklySchedule(schedule: WeeklySchedule): MQTTWeeklySchedule {
-  return {
-    sunday: serializeDaySchedule(schedule.sunday),
-    monday: serializeDaySchedule(schedule.monday),
-    tuesday: serializeDaySchedule(schedule.tuesday),
-    wednesday: serializeDaySchedule(schedule.wednesday),
-    thursday: serializeDaySchedule(schedule.thursday),
-    friday: serializeDaySchedule(schedule.friday),
-    saturday: serializeDaySchedule(schedule.saturday)
-  };
+  const mqtt = {} as MQTTWeeklySchedule;
+  for (const day of DAYS_OF_WEEK) {
+    mqtt[day] = serializeDaySchedule(schedule[day]);
+  }
+  return mqtt;
 }
 
 /**
@@ -155,15 +147,11 @@ export function createEmptyDaySchedule(): DaySchedule {
  * Create an empty weekly schedule with defaults for all days
  */
 export function createEmptyWeeklySchedule(): WeeklySchedule {
-  return {
-    sunday: createEmptyDaySchedule(),
-    monday: createEmptyDaySchedule(),
-    tuesday: createEmptyDaySchedule(),
-    wednesday: createEmptyDaySchedule(),
-    thursday: createEmptyDaySchedule(),
-    friday: createEmptyDaySchedule(),
-    saturday: createEmptyDaySchedule()
-  };
+  const schedule = {} as WeeklySchedule;
+  for (const day of DAYS_OF_WEEK) {
+    schedule[day] = createEmptyDaySchedule();
+  }
+  return schedule;
 }
 
 /**

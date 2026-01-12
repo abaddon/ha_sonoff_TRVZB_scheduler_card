@@ -82,7 +82,7 @@ export function sanitizeMqttTopicSegment(
 
   // Truncate if too long
   const truncated = sanitized.length > MAX_TOPIC_SEGMENT_LENGTH
-    ? sanitized.substring(0, MAX_TOPIC_SEGMENT_LENGTH)
+    ? sanitized.slice(0, MAX_TOPIC_SEGMENT_LENGTH)
     : sanitized;
 
   return {

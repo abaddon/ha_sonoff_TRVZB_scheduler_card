@@ -72,14 +72,11 @@ export class TRVZBSchedulerCard extends LitElement {
    */
   private static readonly PENDING_SAVE_TIMEOUT_MS = 30000;
 
-  // Cached hash of sensor states for efficient change detection
-  private _lastSensorStateHash: string | null = null;
-
   /**
    * Compute a simple hash of all day sensor states for efficient change detection
    * Returns a JSON string array to prevent collision issues with special characters
    */
-  private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string | null {
+  private _computeSensorStateHash(hass: HomeAssistant, entityId: string): string {
     const states: string[] = [];
     for (const day of DAYS_OF_WEEK) {
       const daySensorId = deriveDaySensorEntityId(entityId, day);
@@ -137,9 +134,7 @@ export class TRVZBSchedulerCard extends LitElement {
       return false;
     }
 
-    // Hashes differ - update cache and check if new state has valid data
-    this._lastSensorStateHash = newHash;
-
+    // Hashes differ - check if new state has valid data
     // Check if any sensor appeared with valid data (not just state changes)
     for (const day of DAYS_OF_WEEK) {
       const daySensorId = deriveDaySensorEntityId(entityId, day);
@@ -480,6 +475,32 @@ export class TRVZBSchedulerCard extends LitElement {
   }
 
   /**
+   * Render the schedule view based on current state
+   */
+  private _renderScheduleView() {
+    if (!this._schedule) {
+      return html`<div class="loading-spinner"><div class="spinner"></div></div>`;
+    }
+
+    if (this._viewMode === 'week') {
+      return html`
+        <schedule-week-view
+          .schedule=${this._schedule}
+          @day-selected=${this._handleDaySelected}
+        ></schedule-week-view>
+      `;
+    }
+
+    return html`
+      <schedule-graph-view
+        .schedule=${this._schedule}
+        @schedule-changed=${this._handleScheduleChanged}
+        @copy-requested=${this._handleCopyRequested}
+      ></schedule-graph-view>
+    `;
+  }
+
+  /**
    * Render the card
    */
   protected render() {
@@ -522,22 +543,7 @@ export class TRVZBSchedulerCard extends LitElement {
             ? html`<div class="message message-error">${this._error}</div>`
             : ''}
 
-          ${!this._schedule
-            ? html`<div class="loading-spinner"><div class="spinner"></div></div>`
-            : this._viewMode === 'week'
-            ? html`
-                <schedule-week-view
-                  .schedule=${this._schedule}
-                  @day-selected=${this._handleDaySelected}
-                ></schedule-week-view>
-              `
-            : html`
-                <schedule-graph-view
-                  .schedule=${this._schedule}
-                  @schedule-changed=${this._handleScheduleChanged}
-                  @copy-requested=${this._handleCopyRequested}
-                ></schedule-graph-view>
-              `}
+          ${this._renderScheduleView()}
         </div>
       </ha-card>
 
