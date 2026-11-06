@@ -1,7 +1,11 @@
 import { LitElement, html, TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { editorStyles } from './styles/card-styles';
-import type { HomeAssistant, TRVZBSchedulerCardConfig } from './models/types';
+import type { 
+  HomeAssistant, 
+  TRVZBSchedulerCardConfig, 
+  ThermostatModel 
+} from './models/types';
 
 /**
  * Configuration editor for TRVZB Scheduler Card
@@ -27,7 +31,24 @@ export class TRVZBSchedulerCardEditor extends LitElement {
     this._config = {
       ...config,
       type: 'custom:trvzb-scheduler-card',
+      device_type: config.device_type ?? 'trvzb'
     };
+  }
+
+  private _deviceTypeChanged(e: Event): void {
+    const target = e.target as HTMLSelectElement;
+    const value = target.value as ThermostatModel;
+
+    if (value === this._config.device_type) {
+      return;
+    }
+
+    this._config = {
+      ...this._config,
+      device_type: value
+    };
+
+    this._configChanged();
   }
 
   /**
@@ -281,6 +302,25 @@ export class TRVZBSchedulerCardEditor extends LitElement {
           <div class="editor-description">
             Override the schedule text entity. By default, the card derives it from the
             climate entity (e.g., climate.device → text.device_weekly_schedule).
+          </div>
+        </div>
+        <!-- Device Type Selector -->
+        <div class="editor-row">
+          <label class="editor-label">
+            Device Type
+          </label>
+
+          <select
+            class="editor-select"
+            .value=${this._config.device_type || 'trvzb'}
+            @change=${this._deviceTypeChanged}
+          >
+            <option value="trvzb">Sonoff TRVZB</option>
+            <option value="tp_wgzba">Sonoff TP-WGZBA</option>
+          </select>
+
+          <div class="editor-description">
+            Select the thermostat model.
           </div>
         </div>
       </div>

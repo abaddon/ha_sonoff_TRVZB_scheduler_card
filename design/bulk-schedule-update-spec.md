@@ -225,29 +225,43 @@ File: `src/models/schedule.ts`
  *
  * @param original - The original/reference schedule
  * @param modified - The modified schedule to compare
+ * @param maxTransitions - Max Transition Slots
  * @returns ScheduleDiff with only changed days
  */
+
 export function computeScheduleDiff(
   original: WeeklySchedule,
-  modified: WeeklySchedule
+  modified: WeeklySchedule,
+  maxTransitions: number
 ): ScheduleDiff {
   const changes = new Map<DayOfWeek, string>();
 
   for (const day of DAYS_OF_WEEK) {
-    const originalSerialized = serializeDaySchedule(original[day]);
-    const modifiedSerialized = serializeDaySchedule(modified[day]);
+    const originalSerialized = serializeDaySchedule(
+      original[day],
+      maxTransitions
+    );
+
+    const modifiedSerialized = serializeDaySchedule(
+      modified[day],
+      maxTransitions
+    );
 
     if (originalSerialized !== modifiedSerialized) {
       changes.set(day, modifiedSerialized);
     }
   }
 
+  const changedDays: readonly DayOfWeek[] =
+    Array.from(changes.keys());
+
   return {
     changes,
     hasChanges: changes.size > 0,
-    changedDays: Array.from(changes.keys())
+    changedDays
   };
 }
+
 
 /**
  * Build the MQTT partial payload from a schedule diff

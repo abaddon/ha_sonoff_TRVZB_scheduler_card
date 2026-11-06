@@ -203,7 +203,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -214,7 +214,7 @@ describe('validation.ts', () => {
         transitions: [{ time: '00:00', temperature: 20 }]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -225,7 +225,7 @@ describe('validation.ts', () => {
         transitions: []
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -245,7 +245,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('Too many transitions'))).toBe(true);
@@ -260,7 +260,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('First transition must be at 00:00'))).toBe(true);
@@ -275,7 +275,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('Duplicate transition times'))).toBe(true);
@@ -290,7 +290,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('chronological order'))).toBe(true);
@@ -320,7 +320,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('Transition 2'))).toBe(true);
@@ -349,7 +349,7 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(1);
@@ -367,11 +367,38 @@ describe('validation.ts', () => {
         ]
       };
 
-      const result = validateDaySchedule(schedule);
+      const result = validateDaySchedule(schedule, 6);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
+  });
+
+  it('should accept exactly 12 transitions for TP-WGZBA', () => {
+    const schedule = {
+      transitions: Array.from({ length: 12 }, (_, i) => ({
+        time: `${String(i * 2).padStart(2, '0')}:00`,
+        temperature: 20
+      }))
+    };
+
+    const result = validateDaySchedule(schedule, 12);
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('should reject more than 12 transitions for TP-WGZBA', () => {
+    const schedule = {
+      transitions: Array.from({ length: 13 }, (_, i) => ({
+        time: `${String(i * 2).padStart(2, '0')}:00`,
+        temperature: 20
+      }))
+    };
+
+    const result = validateDaySchedule(schedule, 12);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('Too many transitions'))).toBe(true);
   });
 
   describe('validateWeeklySchedule', () => {

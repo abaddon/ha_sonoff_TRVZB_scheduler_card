@@ -153,7 +153,8 @@ export async function saveSchedule(
   hass: HomeAssistant,
   entityId: string,
   originalSchedule: WeeklySchedule,
-  modifiedSchedule: WeeklySchedule
+  modifiedSchedule: WeeklySchedule,
+  maxTransitions: number
 ): Promise<SaveScheduleResult> {
   try {
     // Validate input schedules before computing diff
@@ -172,7 +173,7 @@ export async function saveSchedule(
     }
 
     // Compute which days have changed
-    const diff = computeScheduleDiff(originalSchedule, modifiedSchedule);
+    const diff = computeScheduleDiff(originalSchedule, modifiedSchedule, maxTransitions);
 
     // No changes detected - skip MQTT publish
     if (!diff.hasChanges) {

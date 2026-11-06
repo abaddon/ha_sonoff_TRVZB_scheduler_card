@@ -83,26 +83,48 @@ export function parseDaySchedule(scheduleString: string): DaySchedule {
  * Serialize a day schedule to MQTT format string
  *
  * @param schedule - Day schedule to serialize
+ * @param maxTransitions - Maximum time slot to fill
  * @returns Space-separated string in HH:mm/temperature format
  */
-export function serializeDaySchedule(schedule: DaySchedule): string {
-  // Remove duplicates (keep first occurrence of each time)
-  const deduplicated = removeDuplicateTransitions(schedule.transitions);
 
-  // Sort transitions before serializing
+export function serializeDaySchedule(
+  schedule: DaySchedule,
+  maxTransitions: number
+): string {
+  // Remove duplicate transition times and sort chronologically.
+  const deduplicated = removeDuplicateTransitions(schedule.transitions);
   const sorted = sortTransitions(deduplicated);
 
-  // Convert each transition to "HH:mm/temperature" format
-  const parts = sorted.map(t => {
-    // Format temperature to remove unnecessary decimals
+  if (sorted.length === 0) {
+    return '';
+  }
+
+  if (sorted.length > maxTransitions) {
+    throw new Error(
+      `Too many transitions: ${sorted.length}. Maximum is ${maxTransitions}`
+    );
+  }
+
+  // Repeat the last transition until all device slots are filled.
+  const padded = [...sorted];
+  const lastTransition = sorted[sorted.length - 1];
+
+  while (padded.length < maxTransitions) {
+    padded.push(lastTransition);
+  }
+
+  // Convert transitions to MQTT format.
+  const parts = padded.map(t => {
     const temp = t.temperature % 1 === 0
       ? t.temperature.toFixed(0)
       : t.temperature.toFixed(1);
+
     return `${t.time}/${temp}`;
   });
 
   return parts.join(' ');
 }
+
 
 /**
  * Parse a full weekly schedule from MQTT format
@@ -122,13 +144,22 @@ export function parseWeeklySchedule(mqtt: MQTTWeeklySchedule): WeeklySchedule {
  * Serialize a weekly schedule to MQTT format
  *
  * @param schedule - Weekly schedule to serialize
+ * @param maxTransitions - Maximum time slot to fill
  * @returns MQTT-compatible weekly schedule object
  */
-export function serializeWeeklySchedule(schedule: WeeklySchedule): MQTTWeeklySchedule {
+export function serializeWeeklySchedule(
+  schedule: WeeklySchedule,
+  maxTransitions: number
+): MQTTWeeklySchedule {
   const mqtt = {} as MQTTWeeklySchedule;
+
   for (const day of DAYS_OF_WEEK) {
-    mqtt[day] = serializeDaySchedule(schedule[day]);
+    mqtt[day] = serializeDaySchedule(
+      schedule[day],
+      maxTransitions
+    );
   }
+
   return mqtt;
 }
 
@@ -241,23 +272,32 @@ export function removeDuplicateTransitions(transitions: Transition[]): Transitio
  * @param modified - The modified schedule to compare
  * @returns ScheduleDiff with only changed days
  */
+
 export function computeScheduleDiff(
   original: WeeklySchedule,
-  modified: WeeklySchedule
+  modified: WeeklySchedule,
+  maxTransitions: number
 ): ScheduleDiff {
   const changes = new Map<DayOfWeek, string>();
 
   for (const day of DAYS_OF_WEEK) {
-    const originalSerialized = serializeDaySchedule(original[day]);
-    const modifiedSerialized = serializeDaySchedule(modified[day]);
+    const originalSerialized = serializeDaySchedule(
+      original[day],
+      maxTransitions
+    );
+
+    const modifiedSerialized = serializeDaySchedule(
+      modified[day],
+      maxTransitions
+    );
 
     if (originalSerialized !== modifiedSerialized) {
       changes.set(day, modifiedSerialized);
     }
   }
 
-  // TypeScript readonly is better than Object.freeze for immutability
-  const changedDays: readonly DayOfWeek[] = Array.from(changes.keys());
+  const changedDays: readonly DayOfWeek[] =
+    Array.from(changes.keys());
 
   return {
     changes,
@@ -265,6 +305,7 @@ export function computeScheduleDiff(
     changedDays
   };
 }
+
 
 /**
  * Build the MQTT partial payload from a schedule diff

@@ -6,6 +6,19 @@ export const DAYS_OF_WEEK: readonly DayOfWeek[] = [
   'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
 ] as const;
 
+export type ThermostatModel = 'trvzb' | 'tp_wgzba';
+
+export const DEFAULT_THERMOSTAT_MODEL: ThermostatModel = 'trvzb';
+
+export const MAX_TRANSITIONS_BY_MODEL: Record<ThermostatModel, number> = {
+  trvzb: 6,
+  tp_wgzba: 12
+};
+
+export function getMaxTransitions(model?: ThermostatModel): number {
+  return MAX_TRANSITIONS_BY_MODEL[model ?? DEFAULT_THERMOSTAT_MODEL];
+}
+
 // A single transition (time + temperature)
 export interface Transition {
   id?: string;         // unique identifier for UI tracking (not persisted to MQTT)
@@ -36,6 +49,8 @@ export interface TRVZBSchedulerCardConfig {
   name?: string;            // optional display name
   view_mode?: 'week' | 'graph'; // default view mode
   schedule_sensor?: string; // optional override for schedule sensor entity ID
+  
+  device_type?: ThermostatModel;
 }
 
 // Home Assistant types (simplified)

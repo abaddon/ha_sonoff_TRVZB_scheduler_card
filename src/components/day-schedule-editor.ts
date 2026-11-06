@@ -131,6 +131,9 @@ export class DayScheduleEditor extends LitElement {
   @property({ type: Object })
   schedule: DaySchedule = { transitions: [] };
 
+  @property({ type: Number })
+  maxTransitions = 6;
+
   /**
    * Whether the editor modal is open
    */
@@ -174,7 +177,7 @@ export class DayScheduleEditor extends LitElement {
   private _addTransition() {
     const transitions = [...this._workingSchedule.transitions];
 
-    if (transitions.length >= 6) {
+    if (transitions.length >= this.maxTransitions) {
       return; // Should not happen (button is disabled) but safety check
     }
 
@@ -274,7 +277,7 @@ export class DayScheduleEditor extends LitElement {
     this._workingSchedule = schedule;
 
     // Now validate
-    const result = validateDaySchedule(schedule);
+    const result = validateDaySchedule(schedule, this.maxTransitions);
     this._errors = result.errors;
 
     return result.valid;
@@ -295,7 +298,7 @@ export class DayScheduleEditor extends LitElement {
     this._workingSchedule = schedule;
 
     // Validate to show any errors, but don't block saving
-    const result = validateDaySchedule(schedule);
+    const result = validateDaySchedule(schedule, this.maxTransitions);
     this._errors = result.errors;
 
     // Dispatch schedule-changed event (auto-save)
@@ -374,7 +377,7 @@ export class DayScheduleEditor extends LitElement {
       return html``;
     }
 
-    const canAddTransition = this._workingSchedule.transitions.length < 6;
+    const canAddTransition = this._workingSchedule.transitions.length < this.maxTransitions;
     const hasErrors = this._errors.length > 0;
 
     return html`
@@ -443,7 +446,7 @@ export class DayScheduleEditor extends LitElement {
                   class="button button-primary"
                   ?disabled=${!canAddTransition}
                   @click=${this._addTransition}
-                  title=${canAddTransition ? 'Add new transition' : 'Maximum 6 transitions per day'}
+                  title=${canAddTransition ? 'Add new transition' : `Maximum ${this.maxTransitions} transitions per day`}
                 >
                   + Add Transition
                 </button>

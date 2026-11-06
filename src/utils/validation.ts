@@ -61,7 +61,7 @@ export function validateTransition(transition: Transition): ValidationResult {
 /**
  * Validate a day schedule
  */
-export function validateDaySchedule(schedule: DaySchedule): ValidationResult {
+export function validateDaySchedule(schedule: DaySchedule, maxTransitions: number): ValidationResult {
   const errors: string[] = [];
   const transitions = schedule.transitions;
 
@@ -72,8 +72,8 @@ export function validateDaySchedule(schedule: DaySchedule): ValidationResult {
   }
 
   // Check maximum transitions
-  if (transitions.length > 6) {
-    errors.push(`Too many transitions: ${transitions.length}. Maximum is 6 per day`);
+  if (transitions.length > maxTransitions) {
+    errors.push(`Too many transitions: ${transitions.length}. Maximum is ${maxTransitions} per day`);
   }
 
   // Check first transition is at 00:00
@@ -126,13 +126,13 @@ export function validateDaySchedule(schedule: DaySchedule): ValidationResult {
 /**
  * Validate a weekly schedule
  */
-export function validateWeeklySchedule(schedule: WeeklySchedule): ValidationResult {
+export function validateWeeklySchedule(schedule: WeeklySchedule, maxTransitions: number): ValidationResult {
   const errors: string[] = [];
   const days: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
   days.forEach(day => {
     const daySchedule = schedule[day];
-    const result = validateDaySchedule(daySchedule);
+    const result = validateDaySchedule(daySchedule, maxTransitions);
 
     if (!result.valid) {
       result.errors.forEach(error => {
