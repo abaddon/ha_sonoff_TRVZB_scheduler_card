@@ -5,7 +5,7 @@
 
 import { LitElement, html, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, DAYS_OF_WEEK } from './models/types';
+import { HomeAssistant, TRVZBSchedulerCardConfig, WeeklySchedule, DayOfWeek, MQTTWeeklySchedule, getMaxTransitions, DAYS_OF_WEEK } from './models/types';
 import { getScheduleFromSensor, deriveDaySensorEntityId, saveSchedule, getEntityInfo, entityExists, isInvalidSensorState } from './services/ha-service';
 import { createEmptyWeeklySchedule, serializeWeeklySchedule } from './models/schedule';
 import { cardStyles } from './styles/card-styles';
@@ -117,6 +117,10 @@ export class TRVZBSchedulerCard extends LitElement {
     return true;
   }
 
+  private get _maxTransitions(): number {
+    return getMaxTransitions(this.config.device_type);
+  }
+
   /**
    * Detect if any day sensor has changed between old and new hass state
    * Uses hash-based comparison for efficiency (avoids looping on every update)
@@ -196,7 +200,8 @@ export class TRVZBSchedulerCard extends LitElement {
 
     this.config = {
       ...config,
-      view_mode: config.view_mode || 'week'
+      view_mode: config.view_mode || 'week',
+      device_type: config.device_type ?? 'trvzb'
     };
 
     // Set initial view mode from config
@@ -416,7 +421,7 @@ export class TRVZBSchedulerCard extends LitElement {
     this._pendingSaveId = saveId;
 
     // Store the schedule in MQTT format to compare with sensor updates
-    this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule);
+    this._pendingSaveSchedule = serializeWeeklySchedule(this._schedule, this._maxTransitions);
 
     // Create timeout with closure over saveId
     // Only check saveId - it's the unique identifier for this save operation
@@ -435,7 +440,8 @@ export class TRVZBSchedulerCard extends LitElement {
         this.hass,
         this.config.entity,
         this._originalSchedule,
-        this._schedule
+        this._schedule,
+        this._maxTransitions
       );
 
       // Handle discriminated union result
@@ -552,6 +558,7 @@ export class TRVZBSchedulerCard extends LitElement {
             <day-schedule-editor
               .day=${this._editingDay}
               .schedule=${this._schedule[this._editingDay]}
+              .maxTransitions=${getMaxTransitions(this.config.device_type)}
               .open=${true}
               @schedule-changed=${this._handleScheduleChanged}
               @copy-requested=${this._handleCopyRequested}

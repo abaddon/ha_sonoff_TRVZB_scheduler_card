@@ -1032,8 +1032,13 @@ describe('TRVZBSchedulerCard - Integration Tests', () => {
       expect(Object.keys(payload).length).toBe(2);
       expect(payload).toHaveProperty('weekly_schedule_monday');
       expect(payload).toHaveProperty('weekly_schedule_friday');
-      expect(payload.weekly_schedule_monday).toBe('00:00/25');
-      expect(payload.weekly_schedule_friday).toBe('00:00/22');
+      expect(payload.weekly_schedule_monday).toBe(
+        '00:00/25 00:00/25 00:00/25 00:00/25 00:00/25 00:00/25'
+      );
+
+      expect(payload.weekly_schedule_friday).toBe(
+        '00:00/22 00:00/22 00:00/22 00:00/22 00:00/22 00:00/22'
+      );
     });
 
     it('should update _originalSchedule after successful save', async () => {

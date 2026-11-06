@@ -7,44 +7,50 @@
 [![Zigbee2MQTT](https://img.shields.io/badge/Zigbee2MQTT-Compatible-green.svg)](https://www.zigbee2mqtt.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Home Assistant custom card for managing weekly heating schedules on **Sonoff TRVZB** thermostatic radiator valves integrated via Zigbee2MQTT.
+A Home Assistant custom card for managing weekly heating schedules on **Sonoff TRVZB** thermostatic radiator valves and **Sonoff TP-WGZBA** thermostats integrated via Zigbee2MQTT.
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=abaddon&repository=ha_sonoff_TRVZB_scheduler_card&category=plugin)
 
 > [!WARNING]
-> **Zigbee2MQTT Requirement:** This card requires zigbee-herdsman-converters with the weekly schedule sensor fixed for TRVZB devices. This feature is available from the version [v25.104.0](https://github.com/Koenkk/zigbee-herdsman-converters/releases/tag/v25.104.0) and the first version of Zigbee2MQTT that include it is [2.7.3](https://github.com/Koenkk/zigbee2mqtt/releases/tag/2.7.3)
-Please ensure your Zigbee2MQTT version includes this change.
+> **Zigbee2MQTT requirement for TRVZB:** The card requires `zigbee-herdsman-converters` with the weekly schedule sensor fix for TRVZB devices. This fix is available from [v25.104.0](https://github.com/Koenkk/zigbee-herdsman-converters/releases/tag/v25.104.0), included in Zigbee2MQTT starting with [v2.7.3](https://github.com/Koenkk/zigbee2mqtt/releases/tag/2.7.3).
+>
+> Make sure your Zigbee2MQTT version includes this change. For TP-WGZBA devices, ensure that Zigbee2MQTT exposes the weekly schedule entities required by the card.
 
 ## Features
 
-- **Two View Modes**: Switch between a visual weekly calendar grid and an interactive graph view with drag controls
-- **Full Schedule Control**: Edit up to 6 temperature transitions per day
-- **Copy Schedules**: Easily copy a day's schedule to other days (weekdays, weekend, or custom selection)
-- **Temperature Range**: Set temperatures from 4°C to 35°C in 0.5°C increments
-- **Smart Defaults**: Automatically adds midnight (00:00) transition if missing and removes duplicate time entries
-- **Theme Integration**: Follows your Home Assistant theme colors
-- **Temperature Color Coding**: Visual temperature indicators (blue for cold, red for hot)
-- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **Two View Modes**: Switch between a visual weekly calendar grid and an interactive graph view with drag controls.
+- **Two Supported Devices**: Sonoff TRVZB and Sonoff TP-WGZBA.
+- **Device-Specific Schedule Limits**: Up to 6 temperature transitions per day for TRVZB and up to 12 for TP-WGZBA.
+- **Copy Schedules**: Easily copy a day's schedule to other days (weekdays, weekend, or custom selection).
+- **Temperature Range**: Set temperatures from 4°C to 35°C in 0.5°C increments.
+- **Smart Defaults**: Automatically adds a midnight (00:00) transition if missing and removes duplicate time entries.
+- **Automatic Schedule Padding**: Fills unused device schedule slots by repeating the last transition when saving.
+- **Efficient MQTT Updates**: Sends all modified days in a single MQTT message, avoiding unnecessary updates to unchanged days.
+- **No Unnecessary Updates**: Does not publish an MQTT message when the schedule has not changed.
+- **Theme Integration**: Follows your Home Assistant theme colors.
+- **Temperature Color Coding**: Visual temperature indicators (blue for cold, red for hot).
+- **Responsive Design**: Works on desktop, tablet, and mobile devices.
 
 ## Screenshots
 
 <!-- TODO: Add actual screenshots -->
-| Week View | Graph View                                                                                                            | Day Editor |
-|-----------|-----------------------------------------------------------------------------------------------------------------------|------------|
-| ![Week View](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/week-view.png) | ![List View](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/graph-view.png) | ![Day Editor](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/day-editor.png) |
+| Week View | Graph View | Day Editor |
+|-----------|------------|------------|
+| ![Week View](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/week-view.png) | ![Graph View](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/graph-view.png) | ![Day Editor](https://raw.githubusercontent.com/abaddon/ha_sonoff_TRVZB_scheduler_card/main/screenshots/day-editor.png) |
 
 ## Requirements
 
 - **Home Assistant** 2024.1 or later
 - **HACS** (Home Assistant Community Store) - for easy installation
-- **Zigbee2MQTT** with Sonoff TRVZB device integrated
+- **Zigbee2MQTT** with a supported Sonoff TRVZB or TP-WGZBA device integrated
 - **MQTT Integration** enabled in Home Assistant
+- The seven weekly schedule text entities exposed by Zigbee2MQTT for the device
 
 ## Installation
 
 ### Option 1: HACS Installation (Recommended)
 
-1. Make sure [HACS](https://hacs.xyz/) is installed in your Home Assistant instance
+1. Make sure [HACS](https://hacs.xyz/) is installed in your Home Assistant instance.
 
 2. Click the button below to add this repository to HACS:
 
@@ -52,61 +58,71 @@ Please ensure your Zigbee2MQTT version includes this change.
 
    **Or manually add the repository:**
 
-   1. Open HACS in Home Assistant
-   2. Click on the three dots menu in the top right corner
-   3. Select **Custom repositories**
+   1. Open HACS in Home Assistant.
+   2. Click on the three dots menu in the top right corner.
+   3. Select **Custom repositories**.
    4. Add the repository URL: `https://github.com/abaddon/ha_sonoff_TRVZB_scheduler_card`
-   5. Select **Dashboard** as the category
-   6. Click **Add**
+   5. Select **Dashboard** as the category.
+   6. Click **Add**.
 
-3. Search for "TRVZB Scheduler Card" in HACS
-
-4. Click **Download**
-
-5. Restart Home Assistant
-
-6. Add the card to your dashboard (see [Configuration](#configuration))
+3. Search for "TRVZB Scheduler Card" in HACS.
+4. Click **Download**.
+5. Restart Home Assistant.
+6. Add the card to your dashboard (see [Configuration](#configuration)).
 
 ### Option 2: Manual Installation
 
-1. Download `trvzb-scheduler-card.js` from the [latest release](https://github.com/abaddon/ha_sonoff_TRVZB_scheduler_card/releases/latest)
+1. Download `trvzb-scheduler-card.js` from the [latest release](https://github.com/abaddon/ha_sonoff_TRVZB_scheduler_card/releases/latest).
 
 2. Copy the file to your Home Assistant config directory:
+
    ```
    /config/www/trvzb-scheduler-card.js
    ```
 
 3. Add the resource to your dashboard:
-   - Go to **Settings** → **Dashboards**
-   - Click the three-dot menu → **Resources**
-   - Click **Add Resource**
-   - Enter URL: `/local/trvzb-scheduler-card.js`
-   - Select **JavaScript Module**
-   - Click **Create**
+   - Go to **Settings** → **Dashboards**.
+   - Click the three-dot menu → **Resources**.
+   - Click **Add Resource**.
+   - Enter URL: `/local/trvzb-scheduler-card.js`.
+   - Select **JavaScript Module**.
+   - Click **Create**.
 
-4. Restart Home Assistant
-
-5. Add the card to your dashboard (see [Configuration](#configuration))
+4. Restart Home Assistant.
+5. Add the card to your dashboard (see [Configuration](#configuration)).
 
 ## Configuration
 
 ### Using the Visual Editor
 
-1. Go to your dashboard
-2. Click **Edit Dashboard** (pencil icon)
-3. Click **Add Card**
-4. Search for "TRVZB Scheduler Card"
-5. Select your climate entity from the dropdown
-6. Optionally set a custom name and default view mode
-7. Click **Save**
+1. Go to your dashboard.
+2. Click **Edit Dashboard** (pencil icon).
+3. Click **Add Card**.
+4. Search for "TRVZB Scheduler Card".
+5. Select your climate entity from the dropdown.
+6. Select the thermostat model (TRVZB or TP-WGZBA).
+7. Optionally set a custom name and default view mode.
+8. Click **Save**.
 
 ### Using YAML
 
 #### Basic Configuration
 
+For a Sonoff TRVZB, `device_type` can be omitted because `trvzb` is the default:
+
 ```yaml
 type: custom:trvzb-scheduler-card
 entity: climate.living_room_trvzb
+```
+
+#### TP-WGZBA Configuration
+
+For a Sonoff TP-WGZBA, specify `device_type: tp_wgzba`:
+
+```yaml
+type: custom:trvzb-scheduler-card
+entity: climate.living_room_tp_wgzba
+device_type: tp_wgzba
 ```
 
 #### Full Configuration
@@ -114,6 +130,7 @@ entity: climate.living_room_trvzb
 ```yaml
 type: custom:trvzb-scheduler-card
 entity: climate.living_room_trvzb
+device_type: trvzb
 name: Living Room Heating
 view_mode: week
 ```
@@ -122,70 +139,104 @@ view_mode: week
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `entity` | string | **Yes** | - | The climate entity ID of your TRVZB device |
+| `entity` | string | **Yes** | - | The climate entity ID of your thermostat |
+| `device_type` | string | No | `trvzb` | Device model: `trvzb` or `tp_wgzba` |
 | `name` | string | No | Entity friendly name | Custom title for the card |
 | `view_mode` | string | No | `week` | Default view mode: `week` or `graph` |
+
+The `device_type` option determines the maximum number of transitions per day:
+
+| Device | `device_type` | Maximum transitions per day |
+|--------|---------------|-----------------------------|
+| Sonoff TRVZB | `trvzb` | 6 |
+| Sonoff TP-WGZBA | `tp_wgzba` | 12 |
+
+Omitting `device_type` preserves backward compatibility with existing TRVZB configurations.
 
 ## Usage
 
 ### Switching Views
 
 Click the view toggle button in the card header to switch between:
-- **Week View**: Visual 7-day calendar with colored temperature blocks
-- **Graph View**: Interactive temperature graph with drag-to-adjust controls
+
+- **Week View**: Visual 7-day calendar with colored temperature blocks.
+- **Graph View**: Interactive temperature graph with drag-to-adjust controls.
 
 ### Editing a Day's Schedule
 
-1. Click on any day in week view to open the editor, or drag points directly in graph view
-2. The day editor modal will open showing all transitions
-3. Modify times and temperatures as needed
-4. Changes are auto-saved to the card (click main **Save** button to send to device)
+1. Click on any day in week view to open the editor, or drag points directly in graph view.
+2. The day editor modal will open showing all transitions.
+3. Modify times and temperatures as needed.
+4. Changes are applied to the card's pending schedule. Click the main **Save** button to send them to the device.
 
 ### Adding Transitions
 
-1. Open the day editor
-2. Click **Add Transition** (max 6 per day)
-3. Set the time and temperature
-4. Click **Save**
+1. Open the day editor.
+2. Click **Add Transition**. The maximum is 6 transitions for TRVZB and 12 for TP-WGZBA.
+3. Set the time and temperature.
+4. Click **Save** in the main card to apply the changes to the device.
 
 ### Removing Transitions
 
-1. Open the day editor
-2. Click the **X** button next to any transition (except the first one at 00:00)
-3. Click **Save**
+1. Open the day editor.
+2. Click the **X** button next to any transition (except the first one at 00:00).
+3. Click **Save** in the main card to apply the changes to the device.
 
 ### Copying Schedules
 
-1. Open the day editor for the day you want to copy
-2. Click **Copy to Other Days...**
+1. Open the day editor for the day you want to copy.
+2. Click **Copy to Other Days...**.
 3. Select target days using checkboxes or quick buttons:
-   - **Weekdays**: Monday through Friday
-   - **Weekend**: Saturday and Sunday
-   - **All**: All days except the source
-4. Click **Copy**
-5. Click **Save** on the main card to apply to the device
+   - **Weekdays**: Monday through Friday.
+   - **Weekend**: Saturday and Sunday.
+   - **All**: All days except the source.
+4. Click **Copy**.
+5. Click **Save** on the main card to apply the changes to the device.
 
 ### Saving to Device
 
-After making changes, click the **Save** button in the card header to send the schedule to your TRVZB device via MQTT.
+Click the **Save** button in the card header to send the modified schedule to your device via MQTT.
+
+The card:
+- Compares the pending schedule with the current device schedule.
+- Includes only days whose schedules have changed.
+- Sends all changed days in a **single MQTT message** to `zigbee2mqtt/DEVICE_NAME/set`.
+- Does not publish anything when there are no changes.
+
+This reduces the number of MQTT messages required when updating multiple days.
 
 ## Schedule Format
 
-The TRVZB device uses the following schedule format:
+The card supports a different maximum number of transitions depending on the selected device:
 
-- Each day can have up to **6 transitions**
-- Each transition specifies a **time** (HH:mm) and **temperature** (4-35°C)
-- The first transition must be at **00:00** (midnight) - automatically added if missing
-- Temperature steps are **0.5°C**
-- The temperature remains active until the next transition
-- **Duplicate transitions** with the same time are automatically removed (first occurrence is kept)
+- **TRVZB**: up to 6 transitions per day.
+- **TP-WGZBA**: up to 12 transitions per day.
 
-Example: `00:00/18 06:00/21 08:00/18 17:00/22 22:00/18`
+Each transition specifies a **time** (`HH:mm`) and a **temperature** (4-35°C). The temperature remains active until the next transition.
+
+Additional rules:
+
+- The first transition must be at **00:00** (midnight). It is automatically added if missing.
+- Temperature steps are **0.5°C**.
+- Duplicate transitions with the same time are automatically removed (the first occurrence is kept).
+- When saving, unused device schedule slots are filled by repeating the last transition until the device's slot limit is reached.
+- Padded entries are automatically handled when the schedule is read back, so they do not appear as additional transitions in the card editor.
+
+Example schedule:
+
+```text
+00:00/18 06:00/21 08:00/18 17:00/22 22:00/18
+```
+
+This means:
+
 - Midnight to 6:00 AM: 18°C
 - 6:00 AM to 8:00 AM: 21°C
 - 8:00 AM to 5:00 PM: 18°C
 - 5:00 PM to 10:00 PM: 22°C
 - 10:00 PM to midnight: 18°C
+
+The card displays the meaningful transitions shown above. When saving, it automatically pads the schedule to 6 slots for TRVZB or 12 slots for TP-WGZBA by repeating the final transition.
 
 ## Development
 
@@ -228,7 +279,7 @@ npm run test:watch
 
 ### Project Structure
 
-```
+```text
 src/
 ├── index.ts                    # Entry point
 ├── card.ts                     # Main card component
@@ -241,67 +292,69 @@ src/
 │   └── copy-schedule-dialog.ts # Copy schedule dialog
 ├── models/
 │   ├── types.ts                # TypeScript interfaces & constants
-│   └── schedule.ts             # Schedule parsing/serialization
+│   └── schedule.ts             # Schedule parsing, serialization and comparison
 ├── services/
-│   └── ha-service.ts           # Home Assistant integration
+│   └── ha-service.ts           # Home Assistant integration and MQTT updates
 ├── utils/
 │   ├── time.ts                 # Time utilities
-│   └── validation.ts           # Validation logic
+│   └── validation.ts            # Validation logic
 └── styles/
-    └── card-styles.ts          # Shared CSS styles
+    └── card-styles.ts           # Shared CSS styles
 ```
 
 ## Troubleshooting
 
 ### Card Not Showing
 
-1. Ensure the resource is added correctly in Dashboard → Resources
-2. Clear your browser cache (Ctrl+Shift+R or Cmd+Shift+R)
-3. Check the browser console (F12) for errors
-4. Restart Home Assistant after installation
+1. Ensure the resource is added correctly in Dashboard → Resources.
+2. Clear your browser cache (Ctrl+Shift+R or Cmd+Shift+R).
+3. Check the browser console (F12) for errors.
+4. Restart Home Assistant after installation.
 
 ### Card Not Found in Add Card Dialog
 
-1. Make sure you've restarted Home Assistant after installation
-2. Clear your browser cache
-3. Try accessing your dashboard in an incognito/private window
+1. Make sure you've restarted Home Assistant after installation.
+2. Clear your browser cache.
+3. Try accessing your dashboard in an incognito/private window.
 
 ### Entity Not Found
 
-1. Verify your TRVZB is properly integrated with Zigbee2MQTT
-2. Check that the climate entity exists in **Settings** → **Devices & Services** → **Entities**
-3. Ensure the entity ID in the card config matches exactly
+1. Verify your TRVZB or TP-WGZBA is properly integrated with Zigbee2MQTT.
+2. Check that the climate entity exists in **Settings** → **Devices & Services** → **Entities**.
+3. Ensure the entity ID in the card configuration matches exactly.
+4. Check that `device_type` matches your device model.
 
 ### Schedule Not Saving
 
-1. Check that MQTT integration is working in Home Assistant
-2. Verify the Zigbee2MQTT device is online
-3. Check Home Assistant logs (**Settings** → **System** → **Logs**) for MQTT errors
-4. Ensure you have the correct permissions to publish MQTT messages
+1. Check that MQTT integration is working in Home Assistant.
+2. Verify the Zigbee2MQTT device is online.
+3. Check Home Assistant logs (**Settings** → **System** → **Logs**) for MQTT errors.
+4. Ensure you have the correct permissions to publish MQTT messages.
+5. Verify that the selected `device_type` matches your thermostat.
 
 ### Schedule Not Loading
 
-1. The schedule is read from 7 separate day text entities (e.g., `text.device_name_weekly_schedule_monday`)
-2. Ensure Zigbee2MQTT is exposing the weekly schedule text entities
-3. Check if all 7 day text entities exist in Developer Tools → States
-4. Try requesting the schedule manually: publish to `zigbee2mqtt/DEVICE_NAME/get` with payload `{"weekly_schedule":""}`
+1. The schedule is read from 7 separate day text entities (e.g., `text.device_name_weekly_schedule_monday`).
+2. Ensure Zigbee2MQTT exposes the weekly schedule text entities for your device.
+3. Check that all 7 day text entities exist in Developer Tools → States.
+4. Try requesting the schedule manually: publish to `zigbee2mqtt/DEVICE_NAME/get` with payload `{"weekly_schedule":""}`.
 
 ### HACS Installation Issues
 
-1. Make sure HACS is properly installed and configured
-2. Try removing and re-adding the custom repository
-3. Check HACS logs for any error messages
-4. Ensure your Home Assistant instance can reach GitHub
+1. Make sure HACS is properly installed and configured.
+2. Try removing and re-adding the custom repository.
+3. Check HACS logs for any error messages.
+4. Ensure your Home Assistant instance can reach GitHub.
 
 ## Contributing
 
 Contributions are welcome! Please:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m 'Add amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ## License
 
@@ -313,7 +366,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [HACS](https://hacs.xyz/) - Home Assistant Community Store
 - [Zigbee2MQTT](https://www.zigbee2mqtt.io/) - Zigbee to MQTT bridge
 - [LitElement](https://lit.dev/) - Web components library
-- [Sonoff](https://sonoff.tech/) - TRVZB thermostatic radiator valve
+- [Sonoff](https://sonoff.tech/) - TRVZB thermostatic radiator valve and TP-WGZBA thermostat
 
 ---
 
